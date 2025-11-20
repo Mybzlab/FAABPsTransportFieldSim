@@ -14,9 +14,19 @@ from src.visualization import create_payload_animation
 RANDOM_SEED = 42
 
 # Simulation parameters
-N_PARTICLES = 1100
+# Define particle distribution by curvity value: {curvity: count}
+CURVITY_DISTRIBUTION = { # random example
+    -1: 100,
+    -0.4: 300,
+    0: 200,
+    0.6: 100,
+    1: 150,
+}
+# Total particles = sum of all counts
+N_PARTICLES = sum(CURVITY_DISTRIBUTION.values())
+
 BOX_SIZE = 300
-N_STEPS = 200000
+N_STEPS = 4000
 SAVE_INTERVAL = 10
 DT = 0.01
 
@@ -34,28 +44,8 @@ PAYLOAD_START_POSITION = np.array([BOX_SIZE/2, 5 * BOX_SIZE/6])
 # Force parameters
 STIFFNESS = 25.0
 
-# Goal parameters
-GOAL_POSITION = np.array([BOX_SIZE*0.125, BOX_SIZE*0.125])  # Bottom-left corner
-PARTICLE_VIEW_RANGE = 0.1 * BOX_SIZE  # Range for goal detection
-SCORE_AND_POLARITY_UPDATE_INTERVAL = 20  # How often to update scores & polarity (timesteps)
-DIRECTEDNESS = 1                    # 0 = pure vicsek alignment, 1 = pure gradient following
-END_WHEN_GOAL_REACHED = True        # If True, simulation ends when payload reaches goal
-
 # Wall configuration (set to None for no walls)
 # Example walls:
-WALLS = np.array([
-    # Boundary walls
-    [0, 0, 0, BOX_SIZE],
-    [0, 0, BOX_SIZE, 0],
-    [BOX_SIZE, BOX_SIZE, 0, BOX_SIZE],
-    [BOX_SIZE, BOX_SIZE, BOX_SIZE, 0],
-    # Maze walls
-    # [BOX_SIZE*0.33, BOX_SIZE*0.66, BOX_SIZE, BOX_SIZE*0.66],
-    [0, BOX_SIZE*0.25, BOX_SIZE*0.55, BOX_SIZE*0.25], # bottom wall
-    [BOX_SIZE*0.375, BOX_SIZE, BOX_SIZE*0.375, BOX_SIZE*0.45], # top left wall
-    [BOX_SIZE*0.75, BOX_SIZE, BOX_SIZE*0.75, BOX_SIZE*0.45], # top right wall
-], dtype=np.float64)
-# WALLS = None
 WALLS = np.array([
     # Boundary walls
     [0, 0, 0, BOX_SIZE],
@@ -75,17 +65,15 @@ WALLS = np.array([
     [2 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7], #inner top
     [5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 0], #inner right
 ], dtype=np.float64)
-
+# WALLS = None
 
 # Visualization parameters
-SHOW_VECTORS = False              # Display v vectors as arrows
-COLOR_BY_SCORE = False           # If True: color by score, if False: color by curvity
-OUTPUT_FILENAME = "E:/PostThesis/visualizations/forkpath.mp4"           # If None, uses timestamp. Otherwise specify path.
+OUTPUT_FILENAME = "E:/PostThesis/visualizations/env_wall_test.mp4"           # If None, uses timestamp. Otherwise specify path.
 # OUTPUT_FILENAME = "C:/Users/educa/Videos/ye/test.mp4"
 
 # Data saving (set to True to save simulation data)
 SAVE_DATA = False
-DATA_OUTPUT_PATH = "E:/PostThesis/data/polarity_test_deadend.npz"                    # If None, uses timestamp. Otherwise specify path.
+DATA_OUTPUT_PATH = "E:/PostThesis/data/env_wall_test.npz"                    # If None, uses timestamp. Otherwise specify path.
 
 
 #####################
@@ -120,11 +108,6 @@ if __name__ == "__main__":
         'payload_mobility': PAYLOAD_MOBILITY,
         'payload_position': PAYLOAD_START_POSITION,
         'stiffness': STIFFNESS,
-        'goal_position': GOAL_POSITION,
-        'particle_view_range': PARTICLE_VIEW_RANGE,
-        'score_and_polarity_update_interval': SCORE_AND_POLARITY_UPDATE_INTERVAL,
-        'directedness': DIRECTEDNESS,
-        'end_when_goal_reached': END_WHEN_GOAL_REACHED,
         'walls': WALLS if WALLS is not None else np.zeros((0, 4), dtype=np.float64),
         'v0': np.ones(compile_n_particles) * PARTICLE_V0,
         'curvity': np.zeros(compile_n_particles),
@@ -140,6 +123,12 @@ if __name__ == "__main__":
     # BUILD SIMULATION PARAMETERS                       #
     #####################################################
 
+    # Build curvity array from distribution dictionary
+    curvity_array = []
+    for curvity_value, count in CURVITY_DISTRIBUTION.items():
+        curvity_array.extend([curvity_value] * count)
+    curvity_array = np.array(curvity_array)
+
     params = {
         # Global parameters
         'n_particles': N_PARTICLES,
@@ -152,19 +141,12 @@ if __name__ == "__main__":
         'payload_position': PAYLOAD_START_POSITION,
         'stiffness': STIFFNESS,
 
-        # Goal parameters
-        'goal_position': GOAL_POSITION,
-        'particle_view_range': PARTICLE_VIEW_RANGE,
-        'score_and_polarity_update_interval': SCORE_AND_POLARITY_UPDATE_INTERVAL,
-        'directedness': DIRECTEDNESS,
-        'end_when_goal_reached': END_WHEN_GOAL_REACHED,
-
         # Wall parameters
         'walls': WALLS if WALLS is not None else np.zeros((0, 4), dtype=np.float64),
 
         # Particle-specific parameters (arrays)
         'v0': np.ones(N_PARTICLES) * PARTICLE_V0,
-        'curvity': np.zeros(N_PARTICLES),  # Computed dynamically from score & polarity
+        'curvity': curvity_array,  # Fixed curvity values from distribution
         'particle_radius': np.ones(N_PARTICLES) * PARTICLE_RADIUS,
         'mobility': np.ones(N_PARTICLES) * PARTICLE_MOBILITY,
         'rot_diffusion': np.ones(N_PARTICLES) * ROTATIONAL_DIFFUSION
@@ -175,8 +157,7 @@ if __name__ == "__main__":
     #####################################################
 
     positions, orientations, velocities, payload_positions, payload_velocities, \
-    curvity_values, saved_polarity, saved_particle_scores, \
-    particle_scores, polarity, runtime = run_payload_simulation(params)
+    curvity_values, runtime = run_payload_simulation(params)
 
     #####################################################
     # SAVE DATA (optional)                              #
@@ -193,7 +174,7 @@ if __name__ == "__main__":
         save_simulation_data(
             data_file,
             positions, orientations, velocities, payload_positions, payload_velocities,
-            params, curvity_values, saved_polarity, saved_particle_scores
+            params, curvity_values
         )
 
     #####################################################
@@ -210,10 +191,7 @@ if __name__ == "__main__":
     # Create animation
     create_payload_animation(
         positions, orientations, velocities, payload_positions, params,
-        curvity_values, output_file,
-        show_vectors=SHOW_VECTORS,
-        polarity=saved_polarity,
-        particle_scores=saved_particle_scores if COLOR_BY_SCORE else None
+        curvity_values, output_file
     )
 
     print("\nPayload simulation and animation completed successfully!")
