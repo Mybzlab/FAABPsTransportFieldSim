@@ -6,6 +6,25 @@ from src.runner import run_payload_simulation
 from src.visualization import create_payload_animation
 
 
+def K_to_c(x1, y1, x2, y2, K):
+    """
+    Convert standard curvature K=1/R to chord-normalized curvature c.
+
+    Parameters:
+    - x1, y1, x2, y2: wall endpoints
+    - K: standard curvature (K = 1/R where R is radius)
+
+    Returns:
+    - c: chord-normalized curvature parameter
+
+    Example:
+    >>> # Wall with radius 50
+    >>> wall = [0, 0, 100, 0, K_to_c(0, 0, 100, 0, K=1/50)]
+    """
+    chord_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    return K * chord_length / 2
+
+
 #####################################################
 # HYPERPARAMETERS - Configure everything here       #
 #####################################################
@@ -54,8 +73,12 @@ PAYLOAD_START_POSITION = np.array([BOX_SIZE/2, 5 * BOX_SIZE/6])
 STIFFNESS = 25.0
 
 # Wall configuration (set to None for no walls)
-# Example walls: [x1, y1, x2, y2, c] where c is curvature parameter
-# simple maze:
+# Walls format: [x1, y1, x2, y2, c]
+# where c is chord-normalized curvature:
+#   - c = 0: straight line
+#   - c = ±1: semicircle
+# To use standard curvature K=1/R, use the K_to_c() helper function:
+#   - Example: [x1, y1, x2, y2, K_to_c(x1, y1, x2, y2, K=1/50)]
 WALLS = np.array([
     # Boundary walls (straight, c=0)
     [0, 0, 0, BOX_SIZE, 0],
@@ -80,6 +103,15 @@ WALLS = np.array([
     [BOX_SIZE/4, BOX_SIZE/2, 3*BOX_SIZE/4, BOX_SIZE/2, 1],
     [BOX_SIZE/4, BOX_SIZE/2, 3*BOX_SIZE/4, BOX_SIZE/2, -1],
 ])
+
+# Example using K (standard curvature):
+# R = 100  # radius
+# K = 1/R  # curvature
+# WALLS = np.array([
+#     [0, 0, 200, 0, K_to_c(0, 0, 200, 0, K)],  # curved wall with radius 100
+#     [0, 0, 0, 200, 0],  # straight wall
+# ])
+
 # WALLS = None
 
 

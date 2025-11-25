@@ -1,25 +1,40 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def parametric_curve(p1, p2, c, num_points=100):
+def parametric_curve(p1, p2, c=None, K=None, num_points=100):
     """
-    Create a curve between two points with curvature parameter c.
-    
+    Create a curve between two points with curvature parameter.
+
     Parameters:
     - p1, p2: endpoints as (x, y) tuples
-    - c: curvature parameter
+    - c: curvature parameter (chord-normalized)
       * c = 0: straight line
       * c = 1: semicircle (bulging in one direction)
       * c = -1: semicircle (bulging in opposite direction)
+    - K: standard curvature (K = 1/R, alternative to c)
+      * K = 0: straight line
+      * K > 0: curves one direction
+      * K < 0: curves opposite direction
     - num_points: number of points to generate
-    
+
+    Note: Provide either c OR K, not both.
+
     Returns:
     - x, y: arrays of coordinates
     """
-    assert abs(c) <= 1, "Curvature c must be between -1 and 1"
-    
+    if c is not None and K is not None:
+        raise ValueError("Provide either 'c' or 'K', not both")
+
+    if c is None and K is None:
+        raise ValueError("Must provide either 'c' or 'K' parameter")
+
     p1 = np.array(p1)
     p2 = np.array(p2)
+
+    # Convert K to c if K was provided
+    if K is not None:
+        chord_length = np.linalg.norm(p2 - p1)
+        c = K * chord_length / 2
     
     # Vector from p1 to p2
     d = p2 - p1
