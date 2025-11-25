@@ -97,6 +97,119 @@ def point_to_segment_distance(px, py, x1, y1, x2, y2):
     return dist, closest_x, closest_y
 
 @njit(fastmath=True)
+def point_to_curve_distance(px, py, x1, y1, x2, y2, c):
+    """Calculate the minimum distance from a point to a curved wall segment.
+
+    For c=0: uses straight line logic
+    For c≠0: calculates distance to circular arc
+
+    Args:
+        px, py: Point coordinates
+        x1, y1: Arc start point
+        x2, y2: Arc end point
+        c: Curvature parameter (-1 to 1, where 0 is straight)
+
+    Returns:
+        distance: minimum distance from point to curve
+        closest_x, closest_y: coordinates of closest point on curve
+    """
+    # Handle straight line case
+    if abs(c) < 1e-10:
+        return point_to_segment_distance(px, py, x1, y1, x2, y2)
+
+    # Calculate arc parameters
+    # Vector from p1 to p2
+    dx = x2 - x1
+    dy = y2 - y1
+    distance_endpoints = np.sqrt(dx*dx + dy*dy)
+
+    if distance_endpoints < 1e-10:
+        # Degenerate arc (both endpoints same)
+        dist = np.sqrt((px - x1)*(px - x1) + (py - y1)*(py - y1))
+        return dist, x1, y1
+
+    # Midpoint between endpoints
+    mid_x = (x1 + x2) / 2.0
+    mid_y = (y1 + y2) / 2.0
+
+    # Perpendicular direction (rotated 90 degrees)
+    perp_x = -dy / distance_endpoints
+    perp_y = dx / distance_endpoints
+
+    # Calculate radius and center
+    radius = distance_endpoints / (2.0 * abs(c))
+    h = np.sqrt(radius*radius - (distance_endpoints/2.0)*(distance_endpoints/2.0))
+
+    if c > 0:
+        center_x = mid_x + h * perp_x
+        center_y = mid_y + h * perp_y
+    else:
+        center_x = mid_x - h * perp_x
+        center_y = mid_y - h * perp_y
+
+    # Vector from center to point
+    to_point_x = px - center_x
+    to_point_y = py - center_y
+    dist_to_center = np.sqrt(to_point_x*to_point_x + to_point_y*to_point_y)
+
+    if dist_to_center < 1e-10:
+        # Point is at center - use midpoint of arc
+        dist = radius
+        return dist, mid_x, mid_y
+
+    # Project point onto circle
+    projected_x = center_x + radius * to_point_x / dist_to_center
+    projected_y = center_y + radius * to_point_y / dist_to_center
+
+    # Check if projection lies within arc bounds
+    # Calculate angles for arc endpoints
+    angle1 = np.arctan2(y1 - center_y, x1 - center_x)
+    angle2 = np.arctan2(y2 - center_y, x2 - center_x)
+    angle_proj = np.arctan2(projected_y - center_y, projected_x - center_x)
+
+    # Normalize angle difference based on curvature direction
+    if c > 0:
+        # Counterclockwise arc
+        angle_diff = angle2 - angle1
+        if angle_diff < 0:
+            angle_diff += 2.0 * np.pi
+        proj_diff = angle_proj - angle1
+        if proj_diff < 0:
+            proj_diff += 2.0 * np.pi
+    else:
+        # Clockwise arc
+        angle_diff = angle1 - angle2
+        if angle_diff < 0:
+            angle_diff += 2.0 * np.pi
+        proj_diff = angle1 - angle_proj
+        if proj_diff < 0:
+            proj_diff += 2.0 * np.pi
+
+    # Check if projection is within arc
+    if 0 <= proj_diff <= angle_diff:
+        # Projection is on arc
+        closest_x = projected_x
+        closest_y = projected_y
+    else:
+        # Projection is outside arc - closest point is one of the endpoints
+        dist1 = np.sqrt((px - x1)*(px - x1) + (py - y1)*(py - y1))
+        dist2 = np.sqrt((px - x2)*(px - x2) + (py - y2)*(py - y2))
+
+        if dist1 < dist2:
+            closest_x = x1
+            closest_y = y1
+        else:
+            closest_x = x2
+            closest_y = y2
+
+    # Calculate final distance
+    dist_x = px - closest_x
+    dist_y = py - closest_y
+    dist = np.sqrt(dist_x*dist_x + dist_y*dist_y)
+
+    return dist, closest_x, closest_y
+
+@njit(fastmath=True)
 def line_intersects_any_wall(p1_x, p1_y, p2_x, p2_y, walls):
     """Check if line segment (p1, p2) intersects any wall.
 

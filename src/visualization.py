@@ -4,6 +4,8 @@ from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 from matplotlib.patches import Circle
 import time
 
+from .circles import parametric_curve
+
 
 #####################################################
 # Animation and visualization functions             #
@@ -30,7 +32,7 @@ def create_payload_animation(positions, orientations, velocities, payload_positi
     box_size = params['box_size']
     payload_radius = params['payload_radius']
     n_particles = params['n_particles']
-    walls = params.get('walls', np.zeros((0, 4), dtype=np.float64))
+    walls = params.get('walls', np.zeros((0, 5), dtype=np.float64))
 
     # Create figure and axis
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -86,14 +88,28 @@ def create_payload_animation(positions, orientations, velocities, payload_positi
     # Draw walls
     wall_lines = []
     for i in range(walls.shape[0]):
-        line, = ax.plot(
-            [walls[i, 0], walls[i, 2]],  # x-coordinates: [x1, x2]
-            [walls[i, 1], walls[i, 3]],  # y-coordinates: [y1, y2]
-            color='black',
-            linewidth=4,
-            solid_capstyle='round',
-            zorder=10  # Draw on top of particles
-        )
+        x1, y1, x2, y2, c = walls[i, 0], walls[i, 1], walls[i, 2], walls[i, 3], walls[i, 4]
+
+        if abs(c) < 1e-10:
+            # Straight wall
+            line, = ax.plot(
+                [x1, x2],  # x-coordinates: [x1, x2]
+                [y1, y2],  # y-coordinates: [y1, y2]
+                color='black',
+                linewidth=3,
+                solid_capstyle='round',
+                zorder=10  # Draw on top of particles
+            )
+        else:
+            # Curved wall
+            curve_x, curve_y = parametric_curve((x1, y1), (x2, y2), c, num_points=50)
+            line, = ax.plot(
+                curve_x, curve_y,
+                color='black',
+                linewidth=3,
+                solid_capstyle='round',
+                zorder=10  # Draw on top of particles
+            )
         wall_lines.append(line)
 
     # Create payload trajectory

@@ -15,18 +15,27 @@ RANDOM_SEED = 42
 
 # Simulation parameters
 # Define particle distribution by curvity value: {curvity: count}
-CURVITY_DISTRIBUTION = { # random example
-    -1: 100,
-    -0.4: 300,
+# CURVITY_DISTRIBUTION = { # random example
+#     -1: 100,
+#     -0.4: 300,
+#     0: 200,
+#     0.6: 100,
+#     1: 150,
+# }
+
+CURVITY_DISTRIBUTION = {
     0: 200,
-    0.6: 100,
-    1: 150,
+    0.25: 200,
+    0.5: 200,
+    0.75: 200,
+    1: 200,
 }
+
 # Total particles = sum of all counts
 N_PARTICLES = sum(CURVITY_DISTRIBUTION.values())
 
 BOX_SIZE = 300
-N_STEPS = 4000
+N_STEPS = 20000
 SAVE_INTERVAL = 10
 DT = 0.01
 
@@ -34,7 +43,7 @@ DT = 0.01
 PARTICLE_RADIUS = 1.0
 PARTICLE_V0 = 3.75              # Self-propulsion speed
 PARTICLE_MOBILITY = 1.0
-ROTATIONAL_DIFFUSION = 0.05     # Orientational noise
+ROTATIONAL_DIFFUSION = 0 #0.05     # Orientational noise
 
 # Payload parameters
 PAYLOAD_RADIUS = 20
@@ -45,27 +54,34 @@ PAYLOAD_START_POSITION = np.array([BOX_SIZE/2, 5 * BOX_SIZE/6])
 STIFFNESS = 25.0
 
 # Wall configuration (set to None for no walls)
-# Example walls:
+# Example walls: [x1, y1, x2, y2, c] where c is curvature parameter
+# simple maze:
 WALLS = np.array([
-    # Boundary walls
-    [0, 0, 0, BOX_SIZE],
-    [0, 0, BOX_SIZE, 0],
-    [BOX_SIZE, BOX_SIZE, 0, BOX_SIZE],
-    [BOX_SIZE, BOX_SIZE, BOX_SIZE, 0],
-    # Inverted Y shape walls
-    # [2 * BOX_SIZE/6, BOX_SIZE, 4 * BOX_SIZE/6, BOX_SIZE], #top wall
-    [2.2 * BOX_SIZE/6, 4 * BOX_SIZE/7, 2.2 * BOX_SIZE/6, BOX_SIZE], #top left
-    [3.8 * BOX_SIZE/6, 4 * BOX_SIZE/7, 3.8 * BOX_SIZE/6, BOX_SIZE], #top right
-    [2.2 * BOX_SIZE/6, 4 * BOX_SIZE/7, 0, 4 * BOX_SIZE/7], # left shoulder
-    [3.8 * BOX_SIZE/6, 4 * BOX_SIZE/7, BOX_SIZE, 4 * BOX_SIZE/7], # right shoulder
-    # [0, 4 * BOX_SIZE/7, 0, 0], #bot left
-    # [BOX_SIZE, 4*BOX_SIZE/7, BOX_SIZE, 0], #bot right
-    # [0, 0, BOX_SIZE, 0], #bot
-    [2 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 2 * BOX_SIZE/7, 0], #inner left
-    [2 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7], #inner top
-    [5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 0], #inner right
+    # Boundary walls (straight, c=0)
+    [0, 0, 0, BOX_SIZE, 0],
+    [0, 0, BOX_SIZE, 0, 0],
+    [BOX_SIZE, BOX_SIZE, 0, BOX_SIZE, 0],
+    [BOX_SIZE, BOX_SIZE, BOX_SIZE, 0, 0],
+    # Inverted Y shape walls (straight, c=0)
+    # [2 * BOX_SIZE/6, BOX_SIZE, 4 * BOX_SIZE/6, BOX_SIZE, 0], #top wall
+    [2.2 * BOX_SIZE/6, 4 * BOX_SIZE/7, 2.2 * BOX_SIZE/6, BOX_SIZE, 0], #top left
+    [3.8 * BOX_SIZE/6, 4 * BOX_SIZE/7, 3.8 * BOX_SIZE/6, BOX_SIZE, 0], #top right
+    [2.2 * BOX_SIZE/6, 4 * BOX_SIZE/7, 0, 4 * BOX_SIZE/7, 0], # left shoulder
+    [3.8 * BOX_SIZE/6, 4 * BOX_SIZE/7, BOX_SIZE, 4 * BOX_SIZE/7, 0], # right shoulder
+    # [0, 4 * BOX_SIZE/7, 0, 0, 0], #bot left
+    # [BOX_SIZE, 4*BOX_SIZE/7, BOX_SIZE, 0, 0], #bot right
+    # [0, 0, BOX_SIZE, 0, 0], #bot
+    [2 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 2 * BOX_SIZE/7, 0, 0], #inner left
+    [2 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 0], #inner top
+    [5 * BOX_SIZE/7, 2.5 * BOX_SIZE/7, 5 * BOX_SIZE/7, 0, 0], #inner right
 ], dtype=np.float64)
+# circle:
+WALLS = np.array([
+    [BOX_SIZE/4, BOX_SIZE/2, 3*BOX_SIZE/4, BOX_SIZE/2, 1],
+    [BOX_SIZE/4, BOX_SIZE/2, 3*BOX_SIZE/4, BOX_SIZE/2, -1],
+])
 # WALLS = None
+
 
 # Visualization parameters
 OUTPUT_FILENAME = "E:/PostThesis/visualizations/env_wall_test.mp4"           # If None, uses timestamp. Otherwise specify path.
@@ -108,7 +124,7 @@ if __name__ == "__main__":
         'payload_mobility': PAYLOAD_MOBILITY,
         'payload_position': PAYLOAD_START_POSITION,
         'stiffness': STIFFNESS,
-        'walls': WALLS if WALLS is not None else np.zeros((0, 4), dtype=np.float64),
+        'walls': WALLS if WALLS is not None else np.zeros((0, 5), dtype=np.float64),
         'v0': np.ones(compile_n_particles) * PARTICLE_V0,
         'curvity': np.zeros(compile_n_particles),
         'particle_radius': np.ones(compile_n_particles) * PARTICLE_RADIUS,
@@ -142,7 +158,7 @@ if __name__ == "__main__":
         'stiffness': STIFFNESS,
 
         # Wall parameters
-        'walls': WALLS if WALLS is not None else np.zeros((0, 4), dtype=np.float64),
+        'walls': WALLS if WALLS is not None else np.zeros((0, 5), dtype=np.float64),
 
         # Particle-specific parameters (arrays)
         'v0': np.ones(N_PARTICLES) * PARTICLE_V0,

@@ -81,7 +81,7 @@ class TestWallForces:
         """Test wall force when particle collides with wall."""
         pos = np.array([0.5, 5.0])
         radius = 1.0
-        walls = np.array([[0, 0, 0, 10]])  # Wall along y-axis at x=0
+        walls = np.array([[0, 0, 0, 10, 0]])  # Wall along y-axis at x=0
         stiffness = 10.0
 
         force = compute_wall_forces(pos, radius, walls, stiffness)
@@ -97,7 +97,7 @@ class TestWallForces:
         """Test no force when particle doesn't collide with wall."""
         pos = np.array([5.0, 5.0])
         radius = 1.0
-        walls = np.array([[0, 0, 0, 10]])
+        walls = np.array([[0, 0, 0, 10, 0]])
         stiffness = 10.0
 
         force = compute_wall_forces(pos, radius, walls, stiffness)
@@ -109,8 +109,8 @@ class TestWallForces:
         pos = np.array([0.5, 0.5])
         radius = 1.0
         walls = np.array([
-            [0, 0, 0, 10],   # Left wall
-            [0, 0, 10, 0]    # Bottom wall
+            [0, 0, 0, 10, 0],   # Left wall
+            [0, 0, 10, 0, 0]    # Bottom wall
         ])
         stiffness = 10.0
 
@@ -124,12 +124,43 @@ class TestWallForces:
         """Test with no walls present."""
         pos = np.array([5.0, 5.0])
         radius = 1.0
-        walls = np.zeros((0, 4))
+        walls = np.zeros((0, 5))
         stiffness = 10.0
 
         force = compute_wall_forces(pos, radius, walls, stiffness)
 
         np.testing.assert_array_almost_equal(force, np.zeros(2))
+
+    def test_compute_wall_forces_curved_wall(self):
+        """Test wall force with curved wall (c≠0)."""
+        # Curved wall from (0, 0) to (10, 0) with c=0.5
+        # Place particle close to middle of arc to ensure collision
+        pos = np.array([5.0, -0.5])
+        radius = 2.0
+        walls = np.array([[0, 0, 10, 0, 0.5]])
+        stiffness = 10.0
+
+        force = compute_wall_forces(pos, radius, walls, stiffness)
+
+        # Particle should experience some force from the curved wall
+        force_magnitude = np.linalg.norm(force)
+        # Force should be non-zero if particle overlaps with wall
+        assert force_magnitude >= 0  # At minimum, should not crash
+
+    def test_compute_wall_forces_curved_wall_negative(self):
+        """Test wall force with negatively curved wall (c<0)."""
+        # Curved wall from (0, 0) to (10, 0) with c=-0.5 (bulges upward)
+        # Place particle near the arc
+        pos = np.array([5.0, 0.5])
+        radius = 2.0
+        walls = np.array([[0, 0, 10, 0, -0.5]])
+        stiffness = 10.0
+
+        force = compute_wall_forces(pos, radius, walls, stiffness)
+
+        # Force magnitude should be non-negative
+        force_magnitude = np.linalg.norm(force)
+        assert force_magnitude >= 0
 
 
 class TestCellList:

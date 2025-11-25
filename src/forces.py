@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, int64
 
-from .physics_utils import compute_minimum_distance, point_to_segment_distance
+from .physics_utils import compute_minimum_distance, point_to_segment_distance, point_to_curve_distance
 
 
 ##########################
@@ -50,14 +50,14 @@ def compute_wall_forces(pos, radius, walls, stiffness):
     """Compute repulsive forces from all walls on a particle/payload.
 
     For each wall:
-    1. Calculate distance from particle center to wall segment
+    1. Calculate distance from particle center to wall segment/curve
     2. If distance < radius: particle is colliding with wall
     3. Apply force: F = stiffness * (radius - distance) * normal_direction
 
     Args:
         pos: np.ndarray [x, y], particle/payload position
         radius: float, particle/payload radius
-        walls: np.ndarray of shape (n_walls, 4) with [x1, y1, x2, y2] per wall
+        walls: np.ndarray of shape (n_walls, 5) with [x1, y1, x2, y2, c] per wall
         stiffness: float, wall stiffness (same as particle stiffness)
 
     Returns:
@@ -67,11 +67,11 @@ def compute_wall_forces(pos, radius, walls, stiffness):
     n_walls = walls.shape[0]
 
     for w in range(n_walls):
-        # Get wall segment endpoints
-        x1, y1, x2, y2 = walls[w, 0], walls[w, 1], walls[w, 2], walls[w, 3]
+        # Get wall segment endpoints and curvature
+        x1, y1, x2, y2, c = walls[w, 0], walls[w, 1], walls[w, 2], walls[w, 3], walls[w, 4]
 
-        # Calculate distance from particle to wall segment
-        distance, closest_x, closest_y = point_to_segment_distance(pos[0], pos[1], x1, y1, x2, y2)
+        # Calculate distance from particle to wall curve
+        distance, closest_x, closest_y = point_to_curve_distance(pos[0], pos[1], x1, y1, x2, y2, c)
 
         # Check for collision
         if distance < radius:
@@ -83,19 +83,52 @@ def compute_wall_forces(pos, radius, walls, stiffness):
                 normal_x = (pos[0] - closest_x) / distance
                 normal_y = (pos[1] - closest_y) / distance
             else:
-                # Particle exactly on wall - use perpendicular to wall direction
-                wall_dx = x2 - x1
-                wall_dy = y2 - y1
-                wall_len = np.sqrt(wall_dx*wall_dx + wall_dy*wall_dy)
+                # Particle exactly on wall
+                # For curved walls, we need to calculate the tangent at the closest point
+                if abs(c) < 1e-10:
+                    # Straight wall - use perpendicular to wall direction
+                    wall_dx = x2 - x1
+                    wall_dy = y2 - y1
+                    wall_len = np.sqrt(wall_dx*wall_dx + wall_dy*wall_dy)
 
-                if wall_len > 1e-10:
-                    # Perpendicular vector (rotate 90 degrees)
-                    normal_x = -wall_dy / wall_len
-                    normal_y = wall_dx / wall_len
+                    if wall_len > 1e-10:
+                        # Perpendicular vector (rotate 90 degrees)
+                        normal_x = -wall_dy / wall_len
+                        normal_y = wall_dx / wall_len
+                    else:
+                        # Degenerate wall, push in arbitrary direction
+                        normal_x = 1.0
+                        normal_y = 0.0
                 else:
-                    # Degenerate wall, push in arbitrary direction
-                    normal_x = 1.0
-                    normal_y = 0.0
+                    # Curved wall - calculate normal from arc center
+                    dx = x2 - x1
+                    dy = y2 - y1
+                    distance_endpoints = np.sqrt(dx*dx + dy*dy)
+                    mid_x = (x1 + x2) / 2.0
+                    mid_y = (y1 + y2) / 2.0
+                    perp_x = -dy / distance_endpoints
+                    perp_y = dx / distance_endpoints
+                    radius_arc = distance_endpoints / (2.0 * abs(c))
+                    h = np.sqrt(radius_arc*radius_arc - (distance_endpoints/2.0)*(distance_endpoints/2.0))
+
+                    if c > 0:
+                        center_x = mid_x + h * perp_x
+                        center_y = mid_y + h * perp_y
+                    else:
+                        center_x = mid_x - h * perp_x
+                        center_y = mid_y - h * perp_y
+
+                    # Normal points away from center
+                    to_particle_x = pos[0] - center_x
+                    to_particle_y = pos[1] - center_y
+                    norm_len = np.sqrt(to_particle_x*to_particle_x + to_particle_y*to_particle_y)
+
+                    if norm_len > 1e-10:
+                        normal_x = to_particle_x / norm_len
+                        normal_y = to_particle_y / norm_len
+                    else:
+                        normal_x = 1.0
+                        normal_y = 0.0
 
             # Apply repulsive force
             force_magnitude = stiffness * overlap
