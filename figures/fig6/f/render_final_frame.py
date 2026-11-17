@@ -25,8 +25,11 @@ DRAW_INSET       = False   # payload-zoom inset (removed for wallprune figures)
 VIEW_RANGE       = 90.0    # Particle observation range r; overridden by NPZ if stored
 
 import sys as _sys
-if len(_sys.argv) > 1:
-    SOURCE_FILE = _sys.argv[1]
+_ARGS = [a for a in _sys.argv[1:] if not a.startswith("--")]
+DEFAULT_DATA_DIR = os.path.join(_HERE, "data", "run1")
+ALL_MODE = ("--all" in _sys.argv) or not _ARGS   # default: render every NPZ + combo
+if _ARGS:
+    SOURCE_FILE = _ARGS[0]
     _stem = os.path.splitext(os.path.basename(SOURCE_FILE))[0]
     OUTPUT_IMAGE = os.path.join(_HERE, f"{_stem}.png")
 
@@ -314,6 +317,139 @@ def draw_textured_payload(axis, cx, cy, radius):
 # G10/G20 → G5 reference (box/300);  G30 → G10 reference (box/600)
 
 
+# ── Combined multi-step figure ────────────────────────────────────────────────
+
+COMBO_STEPS = [0, 16, 32, 128]
+COMBO_FRACS = [0.05, 0.33, 0.66, 0.95]   # position in viridis for each step's colour
+COMBO_COLORS = None   # None -> max-saturation viridis at COMBO_FRACS
+COMBO_LAST_PATH_COLOR = '#F2BE00'   # slightly gold instead of pure viridis yellow
+COMBO_LAST_WALL_COLOR = '#C99700'   # darker gold for the step-128 walls
+COMBO_DRAW_PARTICLES = False   # temporarily disabled
+COMBO_PARTICLE_COLOR = '#C8C8C8'
+
+
+def _desaturate(c, sat=0.5, val=1.1):
+    import colorsys
+    from matplotlib.colors import to_rgb
+    h, sv, v = colorsys.rgb_to_hsv(*to_rgb(c))
+    return colorsys.hsv_to_rgb(h, sv * sat, min(1.0, v * val))
+
+
+def _viridis_saturated(f):
+    import colorsys
+    h, _, v = colorsys.rgb_to_hsv(*plt.get_cmap('viridis')(f)[:3])
+    return colorsys.hsv_to_rgb(h, 1.0, v)
+
+
+def _wall_key(w):
+    a = (round(float(w[0]), 3), round(float(w[1]), 3))
+    b = (round(float(w[2]), 3), round(float(w[3]), 3))
+    return (min(a, b), max(a, b))
+
+
+def render_combo(src_dir, stem_fmt, out_path, colors=None):
+    """One figure combining several wall-pruning steps.
+
+    Particles/maze are from the first step; each step's payload path gets its own
+    static viridis colour; walls removed between consecutive steps are drawn
+    dashed in the later step's colour.
+    """
+    runs = [np.load(os.path.join(src_dir, stem_fmt.format(s)), mmap_mode='r')
+            for s in COMBO_STEPS]
+    colors_ = colors or COMBO_COLORS or [_viridis_saturated(f) for f in COMBO_FRACS]
+    colors_ = list(colors_)
+    colors_[-1] = COMBO_LAST_PATH_COLOR
+    wall_colors = [_desaturate(c) for c in colors_]
+    wall_colors[-1] = COMBO_LAST_WALL_COLOR   # pale yellow is invisible on white
+
+    d0 = runs[0]
+    box = float(d0['box_size'])
+    positions = np.array(d0['positions'][-1])
+    pr = np.array(d0['particle_radius'])
+    goal = np.array(d0['goal_position'])
+    pay_r = float(d0['payload_radius'])
+    walls0 = np.array(d0['walls'])
+    wsets = [{_wall_key(w) for w in np.array(r['walls'])} for r in runs]
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_xlim(0, box); ax.set_ylim(0, box)
+    ax.set_aspect('equal'); ax.axis('off')
+    lw = 1.3 if box > 1200 else 1.8
+
+    # Which step (index >= 1) removed each step0 wall; 0 = never removed
+    removed_at = np.zeros(len(walls0), dtype=int)
+    for i, w in enumerate(walls0):
+        k = _wall_key(w)
+        for j in range(1, len(runs)):
+            if k not in wsets[j]:
+                removed_at[i] = j
+                break
+
+    for i, w in enumerate(walls0):
+        if abs(w[4]) > 1e-9:      # skip curved walls in the combo figure
+            continue
+        xs, ys = [w[0], w[2]], [w[1], w[3]]
+        j = removed_at[i]
+        if j == 0:
+            ax.plot(xs, ys, color='#505050', linewidth=lw,
+                    solid_capstyle='round', zorder=10)
+        else:
+            # dotted: zero-length dashes with round caps give round dots
+            ax.plot(xs, ys, color=wall_colors[j], linewidth=lw * 1.8,
+                    linestyle=(0, (0.01, 1.3)), dash_capstyle='round', zorder=11)
+
+    # Particles from step0, all light grey
+    min_r = box / 400.0 if box > 600 else box / 300.0
+    if box > 1200:
+        min_r = box / 600.0
+    scale = 1.5 if box > 120 else 1.0
+    radii = np.maximum(pr, min_r) * scale
+    circles = [mpatches.Circle((x, y), radius=ri) for (x, y), ri in zip(positions, radii)]
+    if COMBO_DRAW_PARTICLES:
+        ax.add_collection(PatchCollection(circles, facecolors=COMBO_PARTICLE_COLOR,
+                                          alpha=0.7, linewidths=0, zorder=6))
+
+    # Payload paths, one static colour each
+    for r, c in zip(runs, colors_):
+        traj = np.array(r['payload_positions'])
+        ax.plot(traj[:, 0], traj[:, 1], color=c, linewidth=3.0, alpha=0.9, zorder=8)
+
+    traj0 = np.array(d0['payload_positions'])
+    draw_textured_payload(ax, traj0[-1, 0], traj0[-1, 1], pay_r)
+    ax.plot(goal[0], goal[1], '*', color=GOAL_COLOR, markersize=18,
+            markeredgewidth=0.8, markeredgecolor='#003A0E', zorder=12)
+
+    # Legend: one entry per payload path
+    from matplotlib.lines import Line2D
+    handles, labels = [], []
+    for st, c in zip(COMBO_STEPS, colors_):
+        handles.append(Line2D([], [], color=c, linewidth=3.0))
+        labels.append(f'{st} walls pruned')
+    leg = ax.legend(handles, labels, loc='upper left', ncol=1, fontsize=21,
+                    frameon=True, fancybox=True, framealpha=1.0, edgecolor='#282828',
+                    handlelength=2.6, columnspacing=1.2, borderpad=0.9, labelspacing=0.6,
+                    bbox_to_anchor=(0.01, 0.99))
+    leg.set_zorder(30)
+    leg.get_frame().set_linewidth(lw)
+
+    ax.set_position([0, 0, 1, 1])
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', pad_inches=0)
+    plt.close()
+    print(f"Saved combo to {out_path}  "
+          f"(removed per step: {[(int((removed_at == j).sum())) for j in range(1, len(runs))]})")
+
+
+if __name__ == "__main__" and ALL_MODE:
+    import glob
+    import subprocess
+    _files = sorted(glob.glob(os.path.join(DEFAULT_DATA_DIR, "wallprune_G*_step*.npz")))
+    if not _files:
+        raise SystemExit(f"No NPZ files found in {DEFAULT_DATA_DIR}")
+    _passthru = [a for a in _sys.argv[1:] if a.startswith("--") and a != "--all"]
+    for _f in _files:   # each file in its own process (combo is built with step000)
+        subprocess.run([_sys.executable, os.path.abspath(__file__), _f] + _passthru, check=True)
+    raise SystemExit(0)
+
 if __name__ == "__main__":
     os.makedirs(os.path.dirname(OUTPUT_IMAGE), exist_ok=True)
 
@@ -584,3 +720,11 @@ if __name__ == "__main__":
     plt.close()
 
     print(f"Saved to {OUTPUT_IMAGE}  (total: {time.time()-t0:.1f}s)")
+
+    # Combined figure: generated once, alongside the step000 render (or with --combo)
+    _stem0 = os.path.splitext(os.path.basename(SOURCE_FILE))[0]
+    if _stem0.endswith("_step000") or "--combo" in _sys.argv:
+        _base = _stem0.rsplit("_step", 1)[0]
+        _src_dir = os.path.dirname(os.path.abspath(SOURCE_FILE))
+        render_combo(_src_dir, _base + "_step{:03d}.npz",
+                     os.path.join(_HERE, f"{_base}_combo.png"))

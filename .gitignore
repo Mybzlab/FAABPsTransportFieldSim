@@ -12,3 +12,6 @@ __pycache__
 *.txt
 # Keep fig6/abc source data
 !figures/fig6/abc/*.npz
+
+# keep fig6f wallprune runs tracked
+!figures/fig6/f/data/run1/*.npz
