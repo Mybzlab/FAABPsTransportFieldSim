@@ -95,6 +95,8 @@ LOG_FILE="$LOG_DIR/mazescale_${SLURM_ARRAY_JOB_ID}_task_${T}.txt"
 
 echo "Task $T: $DESC output=$OUTPUT_NAME" | tee -a "$LOG_FILE"
 echo "Running from: $(pwd)"
+echo "CMD: ${CMD[*]}" | tee -a "$LOG_FILE"
+echo "main.py shortcut lines: $(grep -n 'args.shortcut\|args.no_shortcut' main.py | paste -sd' ')" | tee -a "$LOG_FILE"
 
 start=$(date +%s.%N)
 "${CMD[@]}" >> "$LOG_FILE" 2>&1

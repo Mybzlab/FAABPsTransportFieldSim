@@ -6,9 +6,8 @@ DT = 0.01
 V0 = 5.0
 R  = 1.0
 
-# One list of trial values per maze size.
-# Add more entries here as you collect the remaining runs.
-raw_data = {
+# OLD hard-coded data (kept for reference, NOT used any more; see data.txt below).
+_old_raw_data = {
     4: [13911, 16804, 22685, 18771, 14038],
     25:  [49050, 50387, 40305, 29497, 41081], # 34680
     100: [103190, 118197, 113178, 128281, 117503], # 138170
@@ -19,7 +18,32 @@ raw_data = {
 }
 
 import os
+import re
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Data now comes from data.txt (lines like "MAZE_RESULT: G=5 run=1 maze_seed=... final_step=... n_steps=... output=...").
+# Keys are maze areas (G**2), values are lists of final_step per run.
+# Runs that hit the step cap (final_step >= n_steps) or have no final_step are skipped.
+def load_raw_data(path):
+    out, seen = {}, set()
+    with open(path) as f:
+        for line in f:
+            if not line.startswith("MAZE_RESULT:"):
+                continue
+            kv = dict(re.findall(r"(\w+)=(\S+)", line))
+            if "G" not in kv or "final_step" not in kv or not kv["final_step"].isdigit():
+                print("skipping (no final_step):", line.strip()); continue
+            key = kv.get("output", line.strip())
+            if key in seen:
+                print("skipping duplicate:", key); continue
+            seen.add(key)
+            final, cap = int(kv["final_step"]), int(kv.get("n_steps", 0) or 0)
+            if cap and final >= cap:
+                print("skipping (hit step cap):", key); continue
+            out.setdefault(int(kv["G"]) ** 2, []).append(final)
+    return out
+
+raw_data = load_raw_data(os.path.join(_HERE, "data.txt"))
 print({a: len(v) for a, v in sorted(raw_data.items())}, "trials per maze area")
 
 data ={s: [v * DT * V0 / R for v in vals] for s, vals in raw_data.items()}
