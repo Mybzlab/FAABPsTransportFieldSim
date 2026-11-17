@@ -425,7 +425,7 @@ def render_combo(src_dir, stem_fmt, out_path, colors=None):
     for st, c in zip(COMBO_STEPS, colors_):
         handles.append(Line2D([], [], color=c, linewidth=3.0))
         labels.append(f'{st} walls pruned')
-    leg = ax.legend(handles, labels, loc='upper left', ncol=1, fontsize=21,
+    leg = ax.legend(handles, labels, loc='upper left', ncol=1, fontsize=30,
                     frameon=True, fancybox=True, framealpha=1.0, edgecolor='#282828',
                     handlelength=2.6, columnspacing=1.2, borderpad=0.9, labelspacing=0.6,
                     bbox_to_anchor=(0.01, 0.99))
