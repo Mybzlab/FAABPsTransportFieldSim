@@ -271,6 +271,8 @@ if __name__ == "__main__":  # simulation runner
                         help="Deprecated no-op: perfect maze is now the default")
     parser.add_argument("--maze-seed", type=int, default=42,
                         help="Seed for Wilson maze generation (default 42, the original)")
+    parser.add_argument("--n-particles", type=int, default=None,
+                        help="Override the default particle count N = 10 * G^2")
     parser.add_argument("--n-steps", type=int, default=None,
                         help="Override N_STEPS (max simulation steps)")
     parser.add_argument("--no-info-rule", action="store_true",
@@ -309,6 +311,8 @@ if __name__ == "__main__":  # simulation runner
     MAZE_GRID_SIZE = args.maze_grid_size
     BOX_SIZE = 60.0 * MAZE_GRID_SIZE
     N_PARTICLES = 10 * MAZE_GRID_SIZE ** 2
+    if args.n_particles is not None:
+        N_PARTICLES = args.n_particles
 
     CELL_SIZE = BOX_SIZE / MAZE_GRID_SIZE
     PAYLOAD_START_POSITION = np.array([CELL_SIZE / 2, CELL_SIZE / 2])

@@ -81,7 +81,7 @@ echo "Task $SLURM_ARRAY_TASK_ID: G=$G N=$N run=$RUN_ID output=$OUTPUT_NAME" | te
 echo "Running from: $(pwd)"
 
 start=$(date +%s.%N)
-python main2.py "$G" "$OUTPUT_NAME" --n-particles "$N" >> "$LOG_FILE" 2>&1
+python main.py "$G" "$OUTPUT_NAME" --n-particles "$N" --n-steps 100000000 >> "$LOG_FILE" 2>&1
 end=$(date +%s.%N)
 elapsed=$(awk "BEGIN {print $end - $start}")
 
