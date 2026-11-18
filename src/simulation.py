@@ -9,6 +9,10 @@ from .physics_utils import (normalize, line_intersects_any_wall,
                             particles_separated_by_wall, particles_separated_by_wall_periodic)
 from .forces import compute_wall_forces, compute_wall_forces_indexed, create_cell_list
 
+# Default ("no information") score. Every particle starts with it, and it is what a
+# particle reports when it hears nothing useful.
+UNREACHABLE = 9999
+
 
 ##########################
 # Main physics functions #
@@ -290,12 +294,17 @@ def nudge_orientations_toward_polarity(orientations, polarity, nudge_strength, n
 
 
 @njit(fastmath=True, parallel=True)
-def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity = 1, min_curvity = -1, mid_curvity = 0.5):
+def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity = 1, min_curvity = -1, mid_curvity = 0.5,
+                                  no_info_rule = False):
     """Compute curvity for all particles based on their polarity vectors.
 
     Curvity = -(e · p), where:
     - e is the particle's heading direction (orientation)
     - p is the particle's polarity vector
+
+    no_info_rule (opt-in): a particle whose polarity is exactly (0, 0) has no
+    gradient information, and gets max_curvity (wall-sliding, exploratory)
+    instead of mid_curvity.
     """
     assert -1 <= min_curvity <= 1, "min_curvity must be in range [-1, 1]"
     assert -1 <= max_curvity <= 1, "max_curvity must be in range [-1, 1]"
@@ -311,6 +320,10 @@ def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvi
     curvity = np.zeros(n_particles)
 
     for i in prange(n_particles):
+        if no_info_rule and polarity[i, 0] == 0.0 and polarity[i, 1] == 0.0:
+            curvity[i] = max_curvity
+            continue
+
         # Compute dot product: e · p
         dot_product = orientations[i, 0] * polarity[i, 0] + orientations[i, 1] * polarity[i, 1]
 
@@ -485,14 +498,21 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                                 r, box_size, head, list_next, n_cells,
                                 payload_pos, payload_radius, walls,
                                 wall_grid_offsets, wall_grid_indices,
-                                n_wall_cells, wall_cell_size):
+                                n_wall_cells, wall_cell_size,
+                                no_info_rule=False):
     """
     Compute polarity vector pointing toward lowest-score neighbor.
 
     Score calculation:
     - If goal is within range r: point to goal, return score 0
     - Otherwise: score = min(neighbor scores within r) + 1
-    - If no neighbors in range: score = 9999
+    - If no neighbors in range: score = UNREACHABLE (9999)
+
+    no_info_rule (opt-in): neighbors that still hold the default score
+    UNREACHABLE carry no information and are not counted as neighbors. A
+    particle that hears only such neighbors keeps score UNREACHABLE and gets
+    polarity (0, 0). Scores therefore never inflate past UNREACHABLE, and a
+    swarm with no goal information is a fixed point.
 
     Polarity calculation:
     - Points toward the position of the lowest-score neighbor(s)
@@ -571,14 +591,15 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
 
                         if not blocked:
                             score_j = particle_scores[j]
-                            if score_j < min_score:
-                                min_score = score_j
-                            found_neighbor = True
+                            if not (no_info_rule and score_j >= UNREACHABLE):
+                                if score_j < min_score:
+                                    min_score = score_j
+                                found_neighbor = True
 
                 j = list_next[j]
 
     if not found_neighbor:
-        return 0.0, 0.0, 9999
+        return 0.0, 0.0, UNREACHABLE
 
     # ---------------------------------------------------
     # Pass 2: average relative positions of min-score neighbors
@@ -619,7 +640,7 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                 j = list_next[j]
 
     if count == 0:
-        return 0.0, 0.0, 9999
+        return 0.0, 0.0, UNREACHABLE
 
     avg_dx = sum_dx / count
     avg_dy = sum_dy / count
@@ -639,8 +660,13 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                          step, goal_position, particle_view_range, score_and_polarity_update_interval, walls,
                          max_curvity, min_curvity, mid_curvity,
                          polarity_nudge_interval, polarity_nudge_strength,
-                         wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size):
-    """Simulate a single time step"""
+                         wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
+                         no_info_rule=False):
+    """Simulate a single time step
+
+    no_info_rule: opt-in experimental rule (see point_polarity_to_goal and
+    compute_curvity_from_polarity). The default reproduces the original behavior.
+    """
     # Compute forces on particles and payload
     particle_forces, payload_force = compute_all_forces(
         positions, payload_pos, radii, payload_radius, stiffness, n_particles, box_size, walls,
@@ -661,13 +687,15 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                 particle_view_range, box_size,
                 head_goal, list_next_goal, n_cells_goal,
                 payload_pos, payload_radius, walls,
-                wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size
+                wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
+                no_info_rule
             )
             polarity[i, 0] = px
             polarity[i, 1] = py
             particle_scores[i] = new_score
 
-    curvity = compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity, min_curvity, mid_curvity)
+    curvity = compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity, min_curvity, mid_curvity,
+                                            no_info_rule)
 
     # Update particle orientations
     orientations = update_orientation_vectors(

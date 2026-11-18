@@ -273,10 +273,39 @@ if __name__ == "__main__":  # simulation runner
                         help="Seed for Wilson maze generation (default 42, the original)")
     parser.add_argument("--n-steps", type=int, default=None,
                         help="Override N_STEPS (max simulation steps)")
+    parser.add_argument("--no-info-rule", action="store_true",
+                        help="Experimental opt-in rule: neighbors still holding the default score (9999) carry "
+                             "no information and are ignored; particles with zero polarity get MAX_CURVITY; "
+                             "initial polarity is zero.")
+    parser.add_argument("--corner-init", action="store_true",
+                        help="Start the whole swarm densely around the payload in the start cell (bottom-left) "
+                             "instead of uniformly over the box")
+    parser.add_argument("--swarm-radius", type=float, default=None,
+                        help="Outer radius of the corner swarm (default: CELL_SIZE/2 - 2, which stays inside the "
+                             "free region of the start cell)")
+    parser.add_argument("--video", action="store_true",
+                        help="Save full (non-light) data and render the mp4 with particles")
+    parser.add_argument("--full-npz", action="store_true",
+                        help="Save the full (non-light) NPZ but do not render the built-in mp4")
+    parser.add_argument("--score-interval", type=int, default=None,
+                        help="Override SCORE_AND_POLARITY_UPDATE_INTERVAL (steps between score/polarity "
+                             "updates; default 20)")
+    parser.add_argument("--save-interval", type=int, default=None,
+                        help="Override SAVE_INTERVAL (steps between saved frames)")
     args = parser.parse_args()
 
     if args.n_steps is not None:
         N_STEPS = args.n_steps
+    if args.save_interval is not None:
+        SAVE_INTERVAL = args.save_interval
+    if args.score_interval is not None:
+        SCORE_AND_POLARITY_UPDATE_INTERVAL = args.score_interval
+    if args.video:
+        CREATE_VIDEO = True
+        LIGHT_NPZ = False
+    if args.full_npz:
+        LIGHT_NPZ = False
+    NO_INFO_RULE = args.no_info_rule
     MAZE_GRID_SIZE = args.maze_grid_size
     BOX_SIZE = 60.0 * MAZE_GRID_SIZE
     N_PARTICLES = 10 * MAZE_GRID_SIZE ** 2
@@ -302,6 +331,12 @@ if __name__ == "__main__":  # simulation runner
             output_prefix = f"optimal_path_G{MAZE_GRID_SIZE}",
         )
     WALLS = maze_to_walls(_passages, MAZE_GRID_SIZE, BOX_SIZE)
+
+    if args.corner_init:
+        _swarm_r = args.swarm_radius if args.swarm_radius is not None else CELL_SIZE / 2 - 2.0
+        SWARM_INIT = (float(PAYLOAD_START_POSITION[0]), float(PAYLOAD_START_POSITION[1]), float(_swarm_r))
+    else:
+        SWARM_INIT = None
 
     # Set random seed
     np.random.seed(RANDOM_SEED)
@@ -387,7 +422,11 @@ if __name__ == "__main__":  # simulation runner
 
         'max_curvity': MAX_CURVITY,
         'min_curvity': MIN_CURVITY,
-        'mid_curvity': MID_CURVITY
+        'mid_curvity': MID_CURVITY,
+
+        # Opt-in experimental options (default off)
+        'no_info_rule': NO_INFO_RULE,
+        'swarm_init': SWARM_INIT,
     }
 
     #####################################################

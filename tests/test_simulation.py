@@ -372,3 +372,64 @@ class TestAllForces:
         assert payload_force[0] > 0
         # Forces should be equal and opposite
         np.testing.assert_array_almost_equal(particle_forces[0], -payload_force)
+
+
+class TestNoInfoRule:
+    """Tests for the opt-in no_info_rule (default-valued neighbors carry no information)."""
+
+    @staticmethod
+    def _call(positions, scores, no_info_rule, i=0, r=20.0, box_size=100.0):
+        from src.forces import create_cell_list
+        positions = np.asarray(positions, dtype=np.float64)
+        scores = np.asarray(scores, dtype=np.int64)
+        head, list_next, n_cells = create_cell_list(positions, box_size, r, len(positions))
+        walls = np.zeros((0, 5), dtype=np.float64)
+        return point_polarity_to_goal(
+            positions[i], np.array([90.0, 90.0]), positions, scores, i,
+            r, box_size, head, list_next, n_cells,
+            np.array([0.0, 0.0]), 5.0, walls,
+            _EMPTY_OFFSETS, _EMPTY_INDICES, _N_WALL_CELLS, _WALL_CELL_SIZE,
+            no_info_rule
+        )
+
+    def test_default_rule_inflates_default_scores(self):
+        px, py, score = self._call([[50.0, 50.0], [55.0, 50.0]], [9999, 9999], False)
+        assert score == 10000
+        assert px == pytest.approx(1.0)
+
+    def test_no_info_rule_ignores_default_valued_neighbors(self):
+        px, py, score = self._call([[50.0, 50.0], [55.0, 50.0]], [9999, 9999], True)
+        assert score == 9999
+        assert (px, py) == (0.0, 0.0)
+
+    def test_no_info_rule_still_follows_real_scores(self):
+        # Neighbor 1 has a real score 5, neighbor 2 holds the default: only 1 counts.
+        positions = [[50.0, 50.0], [55.0, 50.0], [50.0, 56.0]]
+        px, py, score = self._call(positions, [9999, 5, 9999], True)
+        assert score == 6
+        assert px == pytest.approx(1.0)
+        assert py == pytest.approx(0.0)
+
+    def test_no_info_rule_matches_default_when_scores_are_real(self):
+        positions = [[50.0, 50.0], [55.0, 50.0], [50.0, 56.0]]
+        scores = [40, 7, 12]
+        assert self._call(positions, scores, True) == self._call(positions, scores, False)
+
+    def test_curvity_zero_polarity(self):
+        orientations = np.array([[1.0, 0.0], [0.0, 1.0]])
+        polarity = np.array([[0.0, 0.0], [0.0, 1.0]])
+        default = compute_curvity_from_polarity(orientations, polarity, 2, 0.5, -1.0, -0.25)
+        flagged = compute_curvity_from_polarity(orientations, polarity, 2, 0.5, -1.0, -0.25, True)
+        assert default[0] == pytest.approx(-0.25)      # zero polarity -> mid_curvity
+        assert flagged[0] == pytest.approx(0.5)        # zero polarity -> max_curvity
+        assert flagged[1] == pytest.approx(default[1])  # nonzero polarity unchanged
+
+    def test_sample_swarm_positions_annulus(self):
+        from src.runner import sample_swarm_positions
+        np.random.seed(0)
+        pos = sample_swarm_positions(2000, (30.0, 30.0, 28.0), 20.0, 1.0)
+        d = np.linalg.norm(pos - np.array([30.0, 30.0]), axis=1)
+        assert d.min() >= 21.0 - 1e-9
+        assert d.max() <= 28.0 + 1e-9
+        with pytest.raises(ValueError):
+            sample_swarm_positions(10, (30.0, 30.0, 20.5), 20.0, 1.0)

@@ -3,13 +3,29 @@ import zipfile
 import numpy as np
 import time
 
-from .simulation import simulate_single_step
+from .simulation import simulate_single_step, UNREACHABLE
 from .forces import build_wall_spatial_index
 
 
 #####################################################
 # Main simulation runner functions                  #
 #####################################################
+
+def sample_swarm_positions(n_particles, swarm_init, payload_radius, particle_radius):
+    """Sample initial particle positions densely around one point.
+
+    swarm_init = (cx, cy, outer_radius). Positions are uniform over the annulus
+    between the payload surface (payload_radius + particle_radius, so no particle
+    starts inside the payload) and outer_radius around (cx, cy).
+    """
+    cx, cy, r_out = swarm_init
+    r_in = payload_radius + particle_radius
+    if r_out <= r_in:
+        raise ValueError(f"swarm outer radius {r_out} must exceed payload_radius + particle_radius = {r_in}")
+    r = np.sqrt(np.random.uniform(r_in ** 2, r_out ** 2, n_particles))
+    theta = np.random.uniform(0.0, 2.0 * np.pi, n_particles)
+    return np.column_stack([cx + r * np.cos(theta), cy + r * np.sin(theta)])
+
 
 def run_payload_simulation(params, light=False):
     """Run the complete payload transport simulation.
@@ -54,8 +70,16 @@ def run_payload_simulation(params, light=False):
     polarity_nudge_interval = params['polarity_nudge_interval']
     polarity_nudge_strength = params['polarity_nudge_strength']
 
+    # Opt-in experimental rule (default off => original behavior)
+    no_info_rule = bool(params.get('no_info_rule', False))
+
     # Initialize particle positions, orientations, and velocities
-    positions = np.random.uniform(0, box_size, (n_particles, 2))
+    swarm_init = params.get('swarm_init')   # None => uniform over the whole box
+    if swarm_init is None:
+        positions = np.random.uniform(0, box_size, (n_particles, 2))
+    else:
+        positions = sample_swarm_positions(n_particles, swarm_init, float(params['payload_radius']),
+                                           float(np.max(params['particle_radius'])))
     orientations = np.zeros((n_particles, 2))
     velocities = np.zeros((n_particles, 2))
 
@@ -65,12 +89,15 @@ def run_payload_simulation(params, light=False):
         orientations[i] = np.array([np.cos(angle), np.sin(angle)])
 
     # Initialize scalar scores and polarity vectors for all particles
-    particle_scores = np.full(n_particles, 9999, dtype=np.int64)
+    particle_scores = np.full(n_particles, UNREACHABLE, dtype=np.int64)
     polarity = np.zeros((n_particles, 2), dtype=np.float64)
     # Initialize all polarity vectors as unit vectors in direction π/4
     angle = np.pi / 4
     polarity[:, 0] = np.cos(angle)
     polarity[:, 1] = np.sin(angle)
+    if no_info_rule:
+        # No information yet: a shared pi/4 polarity would act as a global compass.
+        polarity[:] = 0.0
 
     # Initialize payload location from parameters
     payload_pos = params['payload_position'].copy()
@@ -118,7 +145,8 @@ def run_payload_simulation(params, light=False):
             n_particles, step, goal_position, particle_view_range, score_and_polarity_update_interval, walls,
             max_curvity, min_curvity, mid_curvity,
             polarity_nudge_interval, polarity_nudge_strength,
-            wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size
+            wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
+            no_info_rule
         )
 
         # Check if payload reached goal
@@ -237,6 +265,9 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
     polarity_nudge_interval = params['polarity_nudge_interval']
     polarity_nudge_strength = params['polarity_nudge_strength']
 
+    # Opt-in experimental rule (default off => original behavior)
+    no_info_rule = bool(params.get('no_info_rule', False))
+
     positions       = initial_positions.copy()
     orientations    = initial_orientations.copy()
     velocities      = np.zeros((n_particles, 2))
@@ -282,7 +313,8 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
             n_particles, step, goal_position, particle_view_range, score_and_polarity_update_interval, walls,
             max_curvity, min_curvity, mid_curvity,
             polarity_nudge_interval, polarity_nudge_strength,
-            wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size
+            wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
+            no_info_rule
         )
 
         if not goal_reached:
