@@ -60,8 +60,8 @@ OPTIMAL_FILES = [
 ]
 
 # Colors
-DARK_BLUE     = '#00008B'
-RED_COLOR     = '#D62728'
+ORIGINAL_PATH_COLOR     = '#FF0000'
+PRUNED_PATH_COLOR     =  '#0000FF'
 PAYLOAD_COLOR = '#737BA8'
 GOAL_COLOR    = '#008F25'   # dark green
 
@@ -76,7 +76,7 @@ PARTICLE_RADIUS_SCALE = 1.5   # display-size multiplier for particle circles (ma
 # Particle score colouring: MINCOLOR_SCORE -> yellow, MAXCOLOR_SCORE -> purple.
 # Scores outside [MIN, MAX] (incl. disconnected particles) clip to the end colours.
 MINCOLOR_SCORE  = 0
-MAXCOLOR_SCORE  = 35
+MAXCOLOR_SCORE  = 36
 SCORE_CMAP_LOW  = '#F4D03F'   # warm amber  — MINCOLOR_SCORE
 SCORE_CMAP_HIGH = "#50106B"   # deep purple — MAXCOLOR_SCORE and above
 
@@ -286,26 +286,26 @@ if __name__ == "__main__":
         if draw_default:
             for path in default_paths:
                 ax.plot(path[:, 0], path[:, 1],
-                        color=DARK_BLUE, alpha=0.30, linewidth=1.2,
+                        color=ORIGINAL_PATH_COLOR, alpha=0.30, linewidth=1.2,
                         linestyle='-', zorder=2)
 
         # 2. Optimal individual paths — red, low alpha, thin
         if draw_optimal:
             for path in optimal_paths:
                 ax.plot(path[:, 0], path[:, 1],
-                        color=RED_COLOR, alpha=0.30, linewidth=1.2,
+                        color=PRUNED_PATH_COLOR, alpha=0.30, linewidth=1.2,
                         linestyle='-', zorder=3)
 
         # 3. Default average path — dark blue, full alpha, thicker
         if draw_default:
             ax.plot(default_avg[:, 0], default_avg[:, 1],
-                    color=DARK_BLUE, alpha=1.0, linewidth=2.5,
+                    color=ORIGINAL_PATH_COLOR, alpha=1.0, linewidth=2.5,
                     linestyle='-', zorder=4)
 
         # 4. Optimal average path — red, full alpha, thicker
         if draw_optimal:
             ax.plot(optimal_avg[:, 0], optimal_avg[:, 1],
-                    color=RED_COLOR, alpha=1.0, linewidth=2.5,
+                    color=PRUNED_PATH_COLOR, alpha=1.0, linewidth=2.5,
                     linestyle='-', zorder=5)
 
         # ── Particles (final frame of reference file) ──────────────────────────
@@ -333,7 +333,7 @@ if __name__ == "__main__":
         display_radii = np.maximum(particle_radius, min_r) * PARTICLE_RADIUS_SCALE
         circles = [mpatches.Circle((x, y), radius=ri)
                    for (x, y), ri in zip(last_positions, display_radii)]
-        pc = PatchCollection(circles, facecolors=colors, edgecolor='k', alpha=1, linewidths=0.2, zorder=6)
+        pc = PatchCollection(circles, facecolors=colors, edgecolor='k', alpha=0.75, linewidths=0.2, zorder=6)
         ax.add_collection(pc)
 
         # For small maps (G2) label every particle in the main view
@@ -374,12 +374,12 @@ if __name__ == "__main__":
         legend_handles = []
         if draw_default:
             legend_handles += [                
-                mlines.Line2D([], [], color=DARK_BLUE, alpha=1.0,  linewidth=2.5,
+                mlines.Line2D([], [], color=ORIGINAL_PATH_COLOR, alpha=1.0,  linewidth=2.5,
                               label='Original path'),
             ]
         if draw_optimal:
             legend_handles += [
-                mlines.Line2D([], [], color=RED_COLOR, alpha=1.0,  linewidth=2.5,
+                mlines.Line2D([], [], color=PRUNED_PATH_COLOR, alpha=1.0,  linewidth=2.5,
                               label='Adapted path'),
             ]
         leg = ax.legend(
