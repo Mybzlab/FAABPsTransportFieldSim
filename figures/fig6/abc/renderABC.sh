@@ -1,0 +1,5 @@
+python render_final_frame.py maze_G2_run1_infrange.npz
+python render_final_frame.py maze_G5_run1_infrange.npz
+python render_final_frame.py maze_G10_run1_infrange.npz
+python render_final_frame.py maze_G20_run1_infrange.npz
+python render_final_frame.py maze_G30_run1_infrange.npz
