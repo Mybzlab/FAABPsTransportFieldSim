@@ -359,8 +359,10 @@ def render_combo(src_dir, stem_fmt, out_path, colors=None):
     colors_ = colors or COMBO_COLORS or [_viridis_saturated(f) for f in COMBO_FRACS]
     colors_ = list(colors_)
     colors_[-1] = COMBO_LAST_PATH_COLOR
+    #Override the complicated coloring above and using simple colors 
+    colors_ = ['r','b','c','g']
     wall_colors = [_desaturate(c) for c in colors_]
-    wall_colors[-1] = COMBO_LAST_WALL_COLOR   # pale yellow is invisible on white
+    #wall_colors[-1] = COMBO_LAST_WALL_COLOR   # pale yellow is invisible on white
 
     d0 = runs[0]
     box = float(d0['box_size'])
@@ -424,11 +426,11 @@ def render_combo(src_dir, stem_fmt, out_path, colors=None):
     handles, labels = [], []
     for st, c in zip(COMBO_STEPS, colors_):
         handles.append(Line2D([], [], color=c, linewidth=3.0))
-        labels.append(f'{st} walls pruned')
-    leg = ax.legend(handles, labels, loc='upper left', ncol=1, fontsize=30,
+        labels.append(f'{st}')
+    leg = ax.legend(handles, labels, loc='upper left', ncol=1, fontsize=46,
                     frameon=True, fancybox=True, framealpha=1.0, edgecolor='#282828',
-                    handlelength=2.6, columnspacing=1.2, borderpad=0.9, labelspacing=0.6,
-                    bbox_to_anchor=(0.01, 0.99))
+                    handlelength=2, columnspacing=0.6, borderpad=0.2, labelspacing=0.2,
+                    bbox_to_anchor=(0.01, 0.99), title = 'Walls Pruned',title_fontsize=42)
     leg.set_zorder(30)
     leg.get_frame().set_linewidth(lw)
 
