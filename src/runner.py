@@ -89,6 +89,15 @@ def run_payload_simulation(params, light=False):
 
     # Opt-in experimental rule (default off => original behavior)
     diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
+    discrete_curvity = bool(params.get('discrete_curvity', False))
+    # Opt-in per-neighbour majority-vote curvity: directions to the lowest-score neighbours
+    VOTE_MAX = 256
+    if bool(params.get('vote_polarity', False)):
+        vote_dirs = np.zeros((n_particles, VOTE_MAX, 2), dtype=np.float64)
+        vote_n = np.zeros(n_particles, dtype=np.int64)
+    else:
+        vote_dirs = None
+        vote_n = None
     next_update_steps, upd_min, upd_max = _init_async_updates(params, n_particles)
     # Step at which each particle performs its first score/polarity update (saved in the NPZ
     # so renderers can tell "has updated at least once" even when the score did not change).
@@ -168,7 +177,8 @@ def run_payload_simulation(params, light=False):
             polarity_nudge_interval, polarity_nudge_strength,
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
             diffusion_init_rule,
-            next_update_steps, upd_min, upd_max
+            next_update_steps, upd_min, upd_max,
+            discrete_curvity, vote_dirs, vote_n
         )
 
         # Check if payload reached goal
@@ -289,6 +299,15 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
 
     # Opt-in experimental rule (default off => original behavior)
     diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
+    discrete_curvity = bool(params.get('discrete_curvity', False))
+    # Opt-in per-neighbour majority-vote curvity: directions to the lowest-score neighbours
+    VOTE_MAX = 256
+    if bool(params.get('vote_polarity', False)):
+        vote_dirs = np.zeros((n_particles, VOTE_MAX, 2), dtype=np.float64)
+        vote_n = np.zeros(n_particles, dtype=np.int64)
+    else:
+        vote_dirs = None
+        vote_n = None
     next_update_steps, upd_min, upd_max = _init_async_updates(params, n_particles)
 
     positions       = initial_positions.copy()
@@ -338,7 +357,8 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
             polarity_nudge_interval, polarity_nudge_strength,
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
             diffusion_init_rule,
-            next_update_steps, upd_min, upd_max
+            next_update_steps, upd_min, upd_max,
+            discrete_curvity, vote_dirs, vote_n
         )
 
         if not goal_reached:

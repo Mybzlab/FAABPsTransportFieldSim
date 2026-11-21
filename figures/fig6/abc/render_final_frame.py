@@ -38,6 +38,7 @@ if "--no-marker" in _sys.argv:
     DRAW_OPENED_WALL = False
 if "--no-edges" in _sys.argv:
     DRAW_SCORE_EDGES = False
+DRAW_INSET = "--no-inset" not in _sys.argv   # False = skip the payload-zoom inset
 
 
 # ── Score-graph edge helpers ──────────────────────────────────────────────────
@@ -484,7 +485,7 @@ if __name__ == "__main__":
     ax.set_position([0, 0, 1, 1])
 
     # ── Inset: zoomed payload view — only for G10+ (box_size > 300) ──────
-    if box_size > 300:
+    if box_size > 300 and DRAW_INSET:
         # Use fig.add_axes (top-level) so the inset is fully opaque over the main axes.
         zoom_half = 40
         _ap = ax.get_position()   # read position AFTER tight_layout
@@ -548,7 +549,7 @@ if __name__ == "__main__":
         # Axes fill the figure, so axes fractions == figure fractions here.
         # Inset occupies x 0.02–0.27, y 0.73–0.98; without an inset, take its slot.
         box_x0, box_w = 0.02, 0.25
-        box_top = (0.73 - 0.012) if box_size > 300 else 0.98
+        box_top = (0.73 - 0.012) if (box_size > 300 and DRAW_INSET) else 0.98
         pad_y, cb_h = 0.012, 0.018
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()

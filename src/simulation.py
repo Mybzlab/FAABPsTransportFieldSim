@@ -295,8 +295,20 @@ def nudge_orientations_toward_polarity(orientations, polarity, nudge_strength, n
 
 @njit(fastmath=True, parallel=True)
 def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity = 1, min_curvity = -1, mid_curvity = 0.5,
-                                  diffusion_init_rule = False):
+                                  diffusion_init_rule = False, discrete_curvity = False,
+                                  vote_dirs = None, vote_n = None):
     """Compute curvity for all particles based on their polarity vectors.
+
+    vote_dirs / vote_n (opt-in, "vote polarity"): per-neighbour majority vote. vote_dirs[i, :vote_n[i]]
+    are the unit directions to particle i's lowest-score visible neighbours (stored at the last
+    score/polarity update). Each neighbour votes "front" if e . u >= 0 (an exact 90 degree neighbour
+    counts as front) and "behind" otherwise; curvity = +1 if strictly more neighbours are behind
+    than in front, else -1 (a tie gives -1). Overrides every other curvity rule, except that a
+    particle with no neighbour to vote (vote_n == 0) gets max_curvity under diffusion_init_rule
+    and -1 otherwise.
+
+    discrete_curvity (opt-in): ignore min/mid/max_curvity and use a hard switch on
+    e . p: curvity = -1 when e . p >= 0, +1 when e . p < 0 (no continuous values).
 
     Curvity = -(e · p), where:
     - e is the particle's heading direction (orientation)
@@ -314,12 +326,31 @@ def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvi
     curvity = np.zeros(n_particles)
 
     for i in prange(n_particles):
+        if vote_dirs is not None:
+            n_votes = vote_n[i]
+            if n_votes == 0:
+                curvity[i] = max_curvity if diffusion_init_rule else -1.0
+                continue
+            n_front = 0
+            n_behind = 0
+            for k in range(n_votes):
+                if orientations[i, 0] * vote_dirs[i, k, 0] + orientations[i, 1] * vote_dirs[i, k, 1] >= 0.0:
+                    n_front += 1
+                else:
+                    n_behind += 1
+            curvity[i] = 1.0 if n_behind > n_front else -1.0
+            continue
+
         if diffusion_init_rule and polarity[i, 0] == 0.0 and polarity[i, 1] == 0.0:
             curvity[i] = max_curvity
             continue
 
         # Compute dot product: e · p
         dot_product = orientations[i, 0] * polarity[i, 0] + orientations[i, 1] * polarity[i, 1]
+
+        if discrete_curvity:
+            curvity[i] = -1.0 if dot_product >= 0 else 1.0
+            continue
 
         # Piecewise linear mapping:
         # dot_product = 1 (aligned) → min_curvity
@@ -493,9 +524,15 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                                 payload_pos, payload_radius, walls,
                                 wall_grid_offsets, wall_grid_indices,
                                 n_wall_cells, wall_cell_size,
-                                diffusion_init_rule=False):
+                                diffusion_init_rule=False,
+                                vote_dirs=None, vote_n=None):
     """
     Compute polarity vector pointing toward lowest-score neighbor.
+
+    vote_dirs / vote_n (opt-in): when given, the unit direction to every lowest-score visible
+    neighbour (or to the goal, if it is visible) is also written to vote_dirs[i, :vote_n[i]]
+    (capped at vote_dirs.shape[1]) for the per-neighbour majority vote in
+    compute_curvity_from_polarity.
 
     Score calculation:
     - If goal is within range r: point to goal, return score 0
@@ -530,6 +567,9 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
     y_goal = goal_position[1]
     r2 = r * r
 
+    if vote_n is not None:
+        vote_n[i] = 0
+
     # Cheap bounding-box rejection before periodic distance
     goal_in_bbox = (x_goal >= x_i - r and x_goal <= x_i + r and
                     y_goal >= y_i - r and y_goal <= y_i + r)
@@ -546,6 +586,10 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                                  n_wall_cells, wall_cell_size):
                 if dist2_goal > 0.0:
                     inv_dist = 1.0 / math.sqrt(dist2_goal)
+                    if vote_n is not None:
+                        vote_dirs[i, 0, 0] = dx_goal * inv_dist
+                        vote_dirs[i, 0, 1] = dy_goal * inv_dist
+                        vote_n[i] = 1
                     return dx_goal * inv_dist, dy_goal * inv_dist, 0
                 return 0.0, 0.0, 0
 
@@ -630,6 +674,13 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                             sum_dx += dx
                             sum_dy += dy
                             count += 1
+                            if vote_n is not None:
+                                k_vote = vote_n[i]
+                                if dist2 > 0.0 and k_vote < vote_dirs.shape[1]:
+                                    inv_d = 1.0 / math.sqrt(dist2)
+                                    vote_dirs[i, k_vote, 0] = dx * inv_d
+                                    vote_dirs[i, k_vote, 1] = dy * inv_d
+                                    vote_n[i] = k_vote + 1
 
                 j = list_next[j]
 
@@ -656,8 +707,15 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                          polarity_nudge_interval, polarity_nudge_strength,
                          wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
                          diffusion_init_rule=False,
-                         next_update_steps=None, update_interval_min=0, update_interval_max=0):
+                         next_update_steps=None, update_interval_min=0, update_interval_max=0,
+                         discrete_curvity=False, vote_dirs=None, vote_n=None):
     """Simulate a single time step
+
+    vote_dirs / vote_n: opt-in per-neighbour majority-vote curvity (see
+    compute_curvity_from_polarity). Both None => off.
+
+    discrete_curvity: opt-in; curvity is -1 / +1 depending on the sign of e . p
+    (see compute_curvity_from_polarity).
 
     diffusion_init_rule: opt-in experimental rule (see point_polarity_to_goal and
     compute_curvity_from_polarity). The default reproduces the original behavior.
@@ -694,7 +752,8 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                         head_goal, list_next_goal, n_cells_goal,
                         payload_pos, payload_radius, walls,
                         wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-                        diffusion_init_rule
+                        diffusion_init_rule,
+                        vote_dirs, vote_n
                     )
                     polarity[i, 0] = px
                     polarity[i, 1] = py
@@ -716,14 +775,16 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                 head_goal, list_next_goal, n_cells_goal,
                 payload_pos, payload_radius, walls,
                 wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-                diffusion_init_rule
+                diffusion_init_rule,
+                vote_dirs, vote_n
             )
             polarity[i, 0] = px
             polarity[i, 1] = py
             particle_scores[i] = new_score
 
     curvity = compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity, min_curvity, mid_curvity,
-                                            diffusion_init_rule)
+                                            diffusion_init_rule, discrete_curvity,
+                                            vote_dirs, vote_n)
 
     # Update particle orientations
     orientations = update_orientation_vectors(

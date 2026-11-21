@@ -134,7 +134,7 @@ BOX_SIZE = 600 #1800.0 #1200.0
 MAZE_GRID_SIZE = 10 #30 #20
 N_STEPS = 20000000
 
-SAVE_INTERVAL = 10
+SAVE_INTERVAL = 100
 DT = 0.01
 
 # Particle parameters
@@ -279,6 +279,16 @@ if __name__ == "__main__":  # simulation runner
                         help="Experimental opt-in rule: neighbors still holding the default score (9999) carry "
                              "no information and are ignored; particles with zero polarity get MAX_CURVITY; "
                              "initial polarity is zero.")
+    parser.add_argument("--discrete-curvity", action="store_true",
+                        help="Opt-in: curvity is a hard switch on e.p instead of the piecewise linear map "
+                             "(-1 when e.p >= 0, +1 when e.p < 0). Ignores MIN/MID/MAX_CURVITY.")
+    parser.add_argument("--vote-polarity", action="store_true",
+                        help="Opt-in: curvity from a per-neighbour majority vote. Each lowest-score visible "
+                             "neighbour votes front (e.u >= 0, so exactly 90 deg counts as front) or behind; "
+                             "k = +1 if strictly more are behind, else -1 (a tie gives -1). Overrides "
+                             "--discrete-curvity; combine with --nudge-strength 0 to remove the polarity nudge.")
+    parser.add_argument("--out-dir", type=str, default=None,
+                        help="Write the npz and mp4 into this folder instead of ./data and ./visualizations")
     parser.add_argument("--corner-init", action="store_true",
                         help="Start the whole swarm densely around the payload in the start cell (bottom-left) "
                              "instead of uniformly over the box")
@@ -332,8 +342,13 @@ if __name__ == "__main__":  # simulation runner
     if args.view_range is not None:
         PARTICLE_VIEW_RANGE = args.view_range
 
-    DATA_OUTPUT_PATH = f"data/{args.output_name}.npz"
-    OUTPUT_FILENAME = f"visualizations/{args.output_name}.mp4"
+    if args.out_dir:
+        os.makedirs(args.out_dir, exist_ok=True)
+        DATA_OUTPUT_PATH = os.path.join(args.out_dir, f"{args.output_name}.npz")
+        OUTPUT_FILENAME = os.path.join(args.out_dir, f"{args.output_name}.mp4")
+    else:
+        DATA_OUTPUT_PATH = f"data/{args.output_name}.npz"
+        OUTPUT_FILENAME = f"visualizations/{args.output_name}.mp4"
 
     if not args.shortcut:
         _passages  = wilson.generate(MAZE_GRID_SIZE, seed=args.maze_seed)
@@ -443,6 +458,8 @@ if __name__ == "__main__":  # simulation runner
 
         # Opt-in experimental options (default off)
         'diffusion_init_rule': DIFFUSION_INIT_RULE,
+        'discrete_curvity': args.discrete_curvity,
+        'vote_polarity': args.vote_polarity,
         'swarm_init': SWARM_INIT,
         'async_update_range': tuple(args.async_update) if args.async_update else None,
     }
