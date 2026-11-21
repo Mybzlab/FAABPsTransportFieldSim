@@ -295,14 +295,14 @@ def nudge_orientations_toward_polarity(orientations, polarity, nudge_strength, n
 
 @njit(fastmath=True, parallel=True)
 def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity = 1, min_curvity = -1, mid_curvity = 0.5,
-                                  no_info_rule = False):
+                                  diffusion_init_rule = False):
     """Compute curvity for all particles based on their polarity vectors.
 
     Curvity = -(e · p), where:
     - e is the particle's heading direction (orientation)
     - p is the particle's polarity vector
 
-    no_info_rule (opt-in): a particle whose polarity is exactly (0, 0) has no
+    diffusion_init_rule (opt-in): a particle whose polarity is exactly (0, 0) has no
     gradient information, and gets max_curvity (wall-sliding, exploratory)
     instead of mid_curvity.
     """
@@ -314,7 +314,7 @@ def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvi
     curvity = np.zeros(n_particles)
 
     for i in prange(n_particles):
-        if no_info_rule and polarity[i, 0] == 0.0 and polarity[i, 1] == 0.0:
+        if diffusion_init_rule and polarity[i, 0] == 0.0 and polarity[i, 1] == 0.0:
             curvity[i] = max_curvity
             continue
 
@@ -493,7 +493,7 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
                                 payload_pos, payload_radius, walls,
                                 wall_grid_offsets, wall_grid_indices,
                                 n_wall_cells, wall_cell_size,
-                                no_info_rule=False):
+                                diffusion_init_rule=False):
     """
     Compute polarity vector pointing toward lowest-score neighbor.
 
@@ -502,7 +502,7 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
     - Otherwise: score = min(neighbor scores within r) + 1
     - If no neighbors in range: score = UNREACHABLE (9999)
 
-    no_info_rule (opt-in): neighbors that still hold the default score
+    diffusion_init_rule (opt-in): neighbors that still hold the default score
     UNREACHABLE carry no information and are not counted as neighbors. A
     particle that hears only such neighbors keeps score UNREACHABLE and gets
     polarity (0, 0). Scores therefore never inflate past UNREACHABLE, and a
@@ -585,7 +585,7 @@ def point_polarity_to_goal(pos_i, goal_position, positions, particle_scores, i,
 
                         if not blocked:
                             score_j = particle_scores[j]
-                            if not (no_info_rule and score_j >= UNREACHABLE):
+                            if not (diffusion_init_rule and score_j >= UNREACHABLE):
                                 if score_j < min_score:
                                     min_score = score_j
                                 found_neighbor = True
@@ -655,11 +655,18 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                          max_curvity, min_curvity, mid_curvity,
                          polarity_nudge_interval, polarity_nudge_strength,
                          wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-                         no_info_rule=False):
+                         diffusion_init_rule=False,
+                         next_update_steps=None, update_interval_min=0, update_interval_max=0):
     """Simulate a single time step
 
-    no_info_rule: opt-in experimental rule (see point_polarity_to_goal and
+    diffusion_init_rule: opt-in experimental rule (see point_polarity_to_goal and
     compute_curvity_from_polarity). The default reproduces the original behavior.
+
+    next_update_steps (opt-in, int64 array of length n_particles): asynchronous
+    score/polarity updates. Particle i updates when step >= next_update_steps[i],
+    then reschedules itself a random update_interval_min..update_interval_max
+    steps ahead. When None, all particles update together every
+    score_and_polarity_update_interval steps (original behavior).
     """
     # Compute forces on particles and payload
     particle_forces, payload_force = compute_all_forces(
@@ -667,8 +674,35 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
         wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size
     )
 
+    if next_update_steps is not None:
+        # Asynchronous per-particle updates
+        any_due = False
+        for i in range(n_particles):
+            if step >= next_update_steps[i]:
+                any_due = True
+                break
+        if any_due:
+            cell_size = particle_view_range
+            head_goal, list_next_goal, n_cells_goal = create_cell_list(positions, box_size, cell_size, n_particles)
+            old_scores = particle_scores.copy()
+
+            for i in prange(n_particles):
+                if step >= next_update_steps[i]:
+                    px, py, new_score = point_polarity_to_goal(
+                        positions[i], goal_position, positions, old_scores, i,
+                        particle_view_range, box_size,
+                        head_goal, list_next_goal, n_cells_goal,
+                        payload_pos, payload_radius, walls,
+                        wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
+                        diffusion_init_rule
+                    )
+                    polarity[i, 0] = px
+                    polarity[i, 1] = py
+                    particle_scores[i] = new_score
+                    next_update_steps[i] = step + np.random.randint(update_interval_min, update_interval_max + 1)
+
     # Update polarity vectors and scores based on goal (at update interval)
-    if step % score_and_polarity_update_interval == 0:
+    elif step % score_and_polarity_update_interval == 0:
         # Create cell list for efficient neighbor search
         cell_size = particle_view_range  # Use particle_view_range as cell size for this search
         head_goal, list_next_goal, n_cells_goal = create_cell_list(positions, box_size, cell_size, n_particles)
@@ -682,14 +716,14 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                 head_goal, list_next_goal, n_cells_goal,
                 payload_pos, payload_radius, walls,
                 wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-                no_info_rule
+                diffusion_init_rule
             )
             polarity[i, 0] = px
             polarity[i, 1] = py
             particle_scores[i] = new_score
 
     curvity = compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity, min_curvity, mid_curvity,
-                                            no_info_rule)
+                                            diffusion_init_rule)
 
     # Update particle orientations
     orientations = update_orientation_vectors(

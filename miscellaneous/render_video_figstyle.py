@@ -90,7 +90,8 @@ def arc_points(x1, y1, x2, y2, c, n_pts=64):
     return (center[0] + R * np.cos(thetas)).tolist(), (center[1] + R * np.sin(thetas)).tolist()
 
 
-def render(npz_path, out_path, save_interval=100, steps_per_frame=1000, fps=15, vmax=None):
+def render(npz_path, out_path, save_interval=100, steps_per_frame=1000, fps=15, vmax=None,
+           red_until_first_update=False):
     data = np.load(npz_path)
     box = float(data['box_size'])
     payload_radius = float(data['payload_radius'])
@@ -145,8 +146,19 @@ def render(npz_path, out_path, save_interval=100, steps_per_frame=1000, fps=15, 
     display_r = np.broadcast_to(display_r, (n_particles,))
     marker_area = (2.0 * display_r * 720.0 / box) ** 2
 
-    def colors_for(sc):
+    # Optional: particles start red and switch to viridis once they have done their first
+    # score/polarity update (even if that update left the score unchanged).
+    first_update = None
+    if red_until_first_update:
+        if 'first_update_steps' not in data.files:
+            raise SystemExit("NPZ has no 'first_update_steps'; re-run the simulation with the updated runner.")
+        first_update = np.asarray(data['first_update_steps'])
+    frame_steps = np.array(frames) * save_interval
+
+    def colors_for(sc, k=0):
         rgba = SCORE_CMAP(norm(sc.astype(float)))
+        if first_update is not None:
+            rgba[first_update > frame_steps[k]] = (1.0, 0.0, 0.0, 1.0)
         rgba[:, 3] = PARTICLE_ALPHA
         return rgba
 
@@ -177,7 +189,7 @@ def render(npz_path, out_path, save_interval=100, steps_per_frame=1000, fps=15, 
         s_idx = frames[k]
         px, py = payload_traj[s_idx]
         scatter.set_offsets(positions[k])
-        scatter.set_facecolor(colors_for(scores[k]))
+        scatter.set_facecolor(colors_for(scores[k], k))
         path_line.set_data(payload_traj[:s_idx + 1, 0], payload_traj[:s_idx + 1, 1])
         im.set_extent((px - payload_radius, px + payload_radius,
                        py - payload_radius, py + payload_radius))
@@ -207,5 +219,9 @@ if __name__ == "__main__":
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--vmax", type=float, default=None,
                     help="Upper end of the viridis score range (default: per-G value used by the figures)")
+    ap.add_argument("--red-until-first-update", action="store_true",
+                    help="Particles are red until their first score/polarity update, then viridis "
+                         "(needs 'first_update_steps' in the NPZ)")
     a = ap.parse_args()
-    render(a.npz, a.output, a.save_interval, a.steps_per_frame, a.fps, a.vmax)
+    render(a.npz, a.output, a.save_interval, a.steps_per_frame, a.fps, a.vmax,
+           a.red_until_first_update)

@@ -143,7 +143,7 @@ PARTICLE_V0 = 5.0              # Self-propulsion speed
 PARTICLE_MOBILITY = 1.0
 ROTATIONAL_DIFFUSION = 0.2 #0.05     # Orientational noise
 
-MAX_CURVITY = 0.5 #1
+MAX_CURVITY = 1
 MIN_CURVITY = -1.0 #-1
 MID_CURVITY = -0.25 #0
 
@@ -165,11 +165,11 @@ CELL_SIZE = BOX_SIZE / MAZE_GRID_SIZE
 # Goal parameters
 PAYLOAD_START_POSITION = np.array([CELL_SIZE / 2, CELL_SIZE / 2])
 GOAL_POSITION =np.array([BOX_SIZE - (CELL_SIZE / 2), BOX_SIZE - (CELL_SIZE / 2)])# np.array([610.0, 610.0])#  # np.array([270.0, 270.0])  # Top-right corner
-PARTICLE_VIEW_RANGE = CELL_SIZE * 1.5 #1200 # CELL_SIZE * 1.5 # Range for goal & neighbor detection
+PARTICLE_VIEW_RANGE = CELL_SIZE * 2.5 #1200 # CELL_SIZE * 1.5 # Range for goal & neighbor detection
 SCORE_AND_POLARITY_UPDATE_INTERVAL = 20  # How often to update scores & polarity (timesteps)
 END_WHEN_GOAL_REACHED = True        # If True, simulation ends when payload reaches goal
 POLARITY_NUDGE_INTERVAL = 5        # Every N steps, nudge heading toward polarity
-POLARITY_NUDGE_STRENGTH = 0.01       # Angular nudge magnitude (radians)
+POLARITY_NUDGE_STRENGTH = 0.01      # Angular nudge magnitude (radians)
 
 
 # WALLS = None  # uncomment to disable walls entirely
@@ -275,7 +275,7 @@ if __name__ == "__main__":  # simulation runner
                         help="Override the default particle count N = 10 * G^2")
     parser.add_argument("--n-steps", type=int, default=None,
                         help="Override N_STEPS (max simulation steps)")
-    parser.add_argument("--no-info-rule", action="store_true",
+    parser.add_argument("--diffusion-init-rule", action="store_true",
                         help="Experimental opt-in rule: neighbors still holding the default score (9999) carry "
                              "no information and are ignored; particles with zero polarity get MAX_CURVITY; "
                              "initial polarity is zero.")
@@ -292,6 +292,15 @@ if __name__ == "__main__":  # simulation runner
     parser.add_argument("--score-interval", type=int, default=None,
                         help="Override SCORE_AND_POLARITY_UPDATE_INTERVAL (steps between score/polarity "
                              "updates; default 20)")
+    parser.add_argument("--async-update", nargs=2, type=int, default=None, metavar=("MIN", "MAX"),
+                        help="Asynchronous score/polarity/curvity updates: each particle updates itself every "
+                             "random MIN..MAX steps, after an initial random delay of 0..MAX steps "
+                             "(e.g. --async-update 300 500). Overrides --score-interval.")
+    parser.add_argument("--nudge-strength", type=float, default=None,
+                        help="Override POLARITY_NUDGE_STRENGTH (radians per nudge; default 0.01)")
+    parser.add_argument("--view-range", type=float, default=None,
+                        help="Override the particle observation range in absolute units "
+                             "(default: 2.5 * CELL_SIZE, i.e. 150 at G=10)")
     parser.add_argument("--save-interval", type=int, default=None,
                         help="Override SAVE_INTERVAL (steps between saved frames)")
     args = parser.parse_args()
@@ -300,6 +309,8 @@ if __name__ == "__main__":  # simulation runner
         N_STEPS = args.n_steps
     if args.save_interval is not None:
         SAVE_INTERVAL = args.save_interval
+    if args.nudge_strength is not None:
+        POLARITY_NUDGE_STRENGTH = args.nudge_strength
     if args.score_interval is not None:
         SCORE_AND_POLARITY_UPDATE_INTERVAL = args.score_interval
     if args.video:
@@ -307,7 +318,7 @@ if __name__ == "__main__":  # simulation runner
         LIGHT_NPZ = False
     if args.full_npz:
         LIGHT_NPZ = False
-    NO_INFO_RULE = args.no_info_rule
+    DIFFUSION_INIT_RULE = args.diffusion_init_rule
     MAZE_GRID_SIZE = args.maze_grid_size
     BOX_SIZE = 60.0 * MAZE_GRID_SIZE
     N_PARTICLES = 10 * MAZE_GRID_SIZE ** 2
@@ -317,7 +328,9 @@ if __name__ == "__main__":  # simulation runner
     CELL_SIZE = BOX_SIZE / MAZE_GRID_SIZE
     PAYLOAD_START_POSITION = np.array([CELL_SIZE / 2, CELL_SIZE / 2])
     GOAL_POSITION = np.array([BOX_SIZE - (CELL_SIZE / 2), BOX_SIZE - (CELL_SIZE / 2)])
-    PARTICLE_VIEW_RANGE = CELL_SIZE * 1.5
+    PARTICLE_VIEW_RANGE = CELL_SIZE * 2.5
+    if args.view_range is not None:
+        PARTICLE_VIEW_RANGE = args.view_range
 
     DATA_OUTPUT_PATH = f"data/{args.output_name}.npz"
     OUTPUT_FILENAME = f"visualizations/{args.output_name}.mp4"
@@ -429,8 +442,9 @@ if __name__ == "__main__":  # simulation runner
         'mid_curvity': MID_CURVITY,
 
         # Opt-in experimental options (default off)
-        'no_info_rule': NO_INFO_RULE,
+        'diffusion_init_rule': DIFFUSION_INIT_RULE,
         'swarm_init': SWARM_INIT,
+        'async_update_range': tuple(args.async_update) if args.async_update else None,
     }
 
     #####################################################

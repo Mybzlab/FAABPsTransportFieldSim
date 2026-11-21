@@ -27,6 +27,23 @@ def sample_swarm_positions(n_particles, swarm_init, payload_radius, particle_rad
     return np.column_stack([cx + r * np.cos(theta), cy + r * np.sin(theta)])
 
 
+def _init_async_updates(params, n_particles):
+    """Per-particle schedule for asynchronous score/polarity updates (or None).
+
+    params['async_update_range'] = (lo, hi): each particle updates every random
+    lo..hi steps; the first update happens after a random delay of 0..hi steps so the phases
+    start desynchronised.
+    """
+    rng = params.get('async_update_range')
+    if rng is None:
+        return None, 0, 0
+    lo, hi = int(rng[0]), int(rng[1])
+    # First update fires right at the end of the random initial delay; only later
+    # updates are spaced lo..hi apart.
+    first = np.random.randint(0, hi + 1, n_particles)
+    return first.astype(np.int64), lo, hi
+
+
 def run_payload_simulation(params, light=False):
     """Run the complete payload transport simulation.
 
@@ -71,7 +88,11 @@ def run_payload_simulation(params, light=False):
     polarity_nudge_strength = params['polarity_nudge_strength']
 
     # Opt-in experimental rule (default off => original behavior)
-    no_info_rule = bool(params.get('no_info_rule', False))
+    diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
+    next_update_steps, upd_min, upd_max = _init_async_updates(params, n_particles)
+    # Step at which each particle performs its first score/polarity update (saved in the NPZ
+    # so renderers can tell "has updated at least once" even when the score did not change).
+    params['first_update_steps'] = None if next_update_steps is None else next_update_steps.copy()
 
     # Initialize particle positions, orientations, and velocities
     swarm_init = params.get('swarm_init')   # None => uniform over the whole box
@@ -95,7 +116,7 @@ def run_payload_simulation(params, light=False):
     angle = np.pi / 4
     polarity[:, 0] = np.cos(angle)
     polarity[:, 1] = np.sin(angle)
-    if no_info_rule:
+    if diffusion_init_rule:
         # No information yet: a shared pi/4 polarity would act as a global compass.
         polarity[:] = 0.0
 
@@ -146,7 +167,8 @@ def run_payload_simulation(params, light=False):
             max_curvity, min_curvity, mid_curvity,
             polarity_nudge_interval, polarity_nudge_strength,
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-            no_info_rule
+            diffusion_init_rule,
+            next_update_steps, upd_min, upd_max
         )
 
         # Check if payload reached goal
@@ -266,7 +288,8 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
     polarity_nudge_strength = params['polarity_nudge_strength']
 
     # Opt-in experimental rule (default off => original behavior)
-    no_info_rule = bool(params.get('no_info_rule', False))
+    diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
+    next_update_steps, upd_min, upd_max = _init_async_updates(params, n_particles)
 
     positions       = initial_positions.copy()
     orientations    = initial_orientations.copy()
@@ -314,7 +337,8 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
             max_curvity, min_curvity, mid_curvity,
             polarity_nudge_interval, polarity_nudge_strength,
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
-            no_info_rule
+            diffusion_init_rule,
+            next_update_steps, upd_min, upd_max
         )
 
         if not goal_reached:
@@ -415,8 +439,12 @@ def save_light_simulation_data(filename, positions, payload_positions, curvity_v
 def save_simulation_data(filename, positions, orientations, velocities, payload_positions,
                         payload_velocities, params, curvity_values, polarity, particle_scores):
     """Save simulation data including individual particle parameters."""
+    extra = {}
+    if params.get('first_update_steps') is not None:
+        extra['first_update_steps'] = np.asarray(params['first_update_steps'])
     np.savez(
         filename,
+        **extra,
         # Frame-specific data
         positions=positions,
         orientations=orientations,
