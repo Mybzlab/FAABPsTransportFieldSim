@@ -34,6 +34,8 @@ MAXCOLOR_SCORE_BY_G = {5: 5, 10: 10, 20: 20, 30: 35}
 import re as _re
 _m = _re.search(r"_G(\d+)_", os.path.basename(SOURCE_FILE))
 MAXCOLOR_SCORE = MAXCOLOR_SCORE_BY_G.get(int(_m.group(1)) if _m else None, 35)
+if "--vmax" in _sys.argv:   # explicit override: --vmax 10
+    MAXCOLOR_SCORE = float(_sys.argv[_sys.argv.index("--vmax") + 1])
 if "--no-marker" in _sys.argv:
     DRAW_OPENED_WALL = False
 if "--no-edges" in _sys.argv:
