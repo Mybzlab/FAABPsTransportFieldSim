@@ -145,11 +145,11 @@ ROTATIONAL_DIFFUSION = 0.2 #0.05     # Orientational noise
 
 MAX_CURVITY = 1
 MIN_CURVITY = -1.0 #-1
-MID_CURVITY = -0.25 #0
+MID_CURVITY = 0 #-0.25 #0
 
 # Payload parameters
-PAYLOAD_RADIUS = 20
-PAYLOAD_MOBILITY = 1 / PAYLOAD_RADIUS
+PAYLOAD_RADIUS = 20 #0.01
+PAYLOAD_MOBILITY = 1 / PAYLOAD_RADIUS #0
 
 # Force parameters
 STIFFNESS = 25.0
@@ -282,6 +282,9 @@ if __name__ == "__main__":  # simulation runner
     parser.add_argument("--discrete-curvity", action="store_true",
                         help="Opt-in: curvity is a hard switch on e.p instead of the piecewise linear map "
                              "(-1 when e.p >= 0, +1 when e.p < 0). Ignores MIN/MID/MAX_CURVITY.")
+    parser.add_argument("--curvity-scale", type=float, default=1.0,
+                        help="Multiplier applied to the continuous (piecewise linear) curvity "
+                             "(default 1; the previously hard-coded value was 0.25).")
     parser.add_argument("--vote-polarity", action="store_true",
                         help="Opt-in: curvity from a per-neighbour majority vote. Each lowest-score visible "
                              "neighbour votes front (e.u >= 0, so exactly 90 deg counts as front) or behind; "
@@ -338,7 +341,6 @@ if __name__ == "__main__":  # simulation runner
     CELL_SIZE = BOX_SIZE / MAZE_GRID_SIZE
     PAYLOAD_START_POSITION = np.array([CELL_SIZE / 2, CELL_SIZE / 2])
     GOAL_POSITION = np.array([BOX_SIZE - (CELL_SIZE / 2), BOX_SIZE - (CELL_SIZE / 2)])
-    PARTICLE_VIEW_RANGE = CELL_SIZE * 2.5
     if args.view_range is not None:
         PARTICLE_VIEW_RANGE = args.view_range
 
@@ -459,6 +461,7 @@ if __name__ == "__main__":  # simulation runner
         # Opt-in experimental options (default off)
         'diffusion_init_rule': DIFFUSION_INIT_RULE,
         'discrete_curvity': args.discrete_curvity,
+        'curvity_scale': args.curvity_scale,
         'vote_polarity': args.vote_polarity,
         'swarm_init': SWARM_INIT,
         'async_update_range': tuple(args.async_update) if args.async_update else None,

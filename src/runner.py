@@ -90,6 +90,7 @@ def run_payload_simulation(params, light=False):
     # Opt-in experimental rule (default off => original behavior)
     diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
     discrete_curvity = bool(params.get('discrete_curvity', False))
+    curvity_scale = float(params.get('curvity_scale', 1.0))
     # Opt-in per-neighbour majority-vote curvity: directions to the lowest-score neighbours
     VOTE_MAX = 256
     if bool(params.get('vote_polarity', False)):
@@ -178,7 +179,7 @@ def run_payload_simulation(params, light=False):
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
             diffusion_init_rule,
             next_update_steps, upd_min, upd_max,
-            discrete_curvity, vote_dirs, vote_n
+            discrete_curvity, vote_dirs, vote_n, curvity_scale
         )
 
         # Check if payload reached goal
@@ -300,6 +301,7 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
     # Opt-in experimental rule (default off => original behavior)
     diffusion_init_rule = bool(params.get('diffusion_init_rule', False))
     discrete_curvity = bool(params.get('discrete_curvity', False))
+    curvity_scale = float(params.get('curvity_scale', 1.0))
     # Opt-in per-neighbour majority-vote curvity: directions to the lowest-score neighbours
     VOTE_MAX = 256
     if bool(params.get('vote_polarity', False)):
@@ -358,7 +360,7 @@ def run_payload_simulation_from_state(params, initial_positions, initial_orienta
             wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
             diffusion_init_rule,
             next_update_steps, upd_min, upd_max,
-            discrete_curvity, vote_dirs, vote_n
+            discrete_curvity, vote_dirs, vote_n, curvity_scale
         )
 
         if not goal_reached:

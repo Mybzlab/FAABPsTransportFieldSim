@@ -296,8 +296,11 @@ def nudge_orientations_toward_polarity(orientations, polarity, nudge_strength, n
 @njit(fastmath=True, parallel=True)
 def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity = 1, min_curvity = -1, mid_curvity = 0.5,
                                   diffusion_init_rule = False, discrete_curvity = False,
-                                  vote_dirs = None, vote_n = None):
+                                  vote_dirs = None, vote_n = None, curvity_scale = 1.0):
     """Compute curvity for all particles based on their polarity vectors.
+
+    curvity_scale: multiplier applied to the continuous (piecewise linear) curvity only; the
+    discrete, vote and diffusion-init branches are unaffected.
 
     vote_dirs / vote_n (opt-in, "vote polarity"): per-neighbour majority vote. vote_dirs[i, :vote_n[i]]
     are the unit directions to particle i's lowest-score visible neighbours (stored at the last
@@ -362,7 +365,7 @@ def compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvi
         else:
             # Linear interpolation from max_curvity (at -1) to mid_curvity (at 0)
             curvity[i] = max_curvity + (mid_curvity - max_curvity) * (dot_product + 1)
-
+        curvity[i] = curvity[i] * curvity_scale
     return curvity
 
 @njit(fastmath=True)
@@ -708,8 +711,10 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
                          wall_grid_offsets, wall_grid_indices, n_wall_cells, wall_cell_size,
                          diffusion_init_rule=False,
                          next_update_steps=None, update_interval_min=0, update_interval_max=0,
-                         discrete_curvity=False, vote_dirs=None, vote_n=None):
+                         discrete_curvity=False, vote_dirs=None, vote_n=None, curvity_scale=1.0):
     """Simulate a single time step
+
+    curvity_scale: multiplier on continuous curvity (see compute_curvity_from_polarity).
 
     vote_dirs / vote_n: opt-in per-neighbour majority-vote curvity (see
     compute_curvity_from_polarity). Both None => off.
@@ -784,7 +789,7 @@ def simulate_single_step(positions, orientations, velocities, payload_pos, paylo
 
     curvity = compute_curvity_from_polarity(orientations, polarity, n_particles, max_curvity, min_curvity, mid_curvity,
                                             diffusion_init_rule, discrete_curvity,
-                                            vote_dirs, vote_n)
+                                            vote_dirs, vote_n, curvity_scale)
 
     # Update particle orientations
     orientations = update_orientation_vectors(
