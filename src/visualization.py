@@ -16,12 +16,15 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
 import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib.colors import Normalize
 
+
+
 # ── Style constants (same values as figures/fig6/f/render_final_frame.py) ─────
-MAXCOLOR_SCORE_BY_G = {5: 5, 10: 10, 20: 20, 30: 35}
+MAXCOLOR_SCORE_BY_G = {4:4, 5: 5, 6:6, 10: 10, 20: 20, 30: 35}
 SCORE_CMAP = plt.get_cmap('viridis')
 NO_SCORE_COLOR = (0.5, 0.5, 0.5, 1.0)
 PARTICLE_ALPHA = 0.7
@@ -29,6 +32,8 @@ PARTICLE_RADIUS_SCALE = 1.5
 GOAL_COLOR = '#008F25'
 PATH_COLOR = '#00008B'
 WALL_COLOR = '#505050'
+NEGATIVE_CURVITY_COLOR = to_rgba("#FF9B00FF") #Dutch Orange
+POSITIVE_CURVITY_COLOR = to_rgba("#8ED64CFF") #Snot Green
 PAYLOAD_GRAY_LIGHT = (0.86, 0.86, 0.86)
 PAYLOAD_GRAY_DARK = (0.40, 0.40, 0.40)
 PAYLOAD_NOISE_CELLS = 4
@@ -104,6 +109,7 @@ def _payload_texture():
 def create_payload_animation(positions, orientations, velocities, payload_positions, params,
                              curvity_values, output_file='visualizations/payload_animation_00.mp4',
                              show_vectors=False, polarity=None, particle_scores=None,
+                             particle_curvities=None,
                              show_inset=False, steps_per_frame=100, fps=15, vmax=None,
                              first_update_steps=None):
     """Create an animation of the payload transport simulation.
@@ -113,6 +119,8 @@ def create_payload_animation(positions, orientations, velocities, payload_positi
     Args:
         particle_scores: (n_frames, n_particles). Particles are coloured by score (viridis);
             if None they are drawn in a single grey.
+        particle_curvity: (n_frames, n_particles). Particles edges are coloured by curvity (orange/green);
+            if None they are drawn in grey.
         show_vectors: draw the polarity vectors as arrows (needs `polarity`, (n_frames, N, 2)).
         show_inset: draw a zoomed payload-centred view in the top-left corner.
         steps_per_frame: simulation steps advanced per video frame (default 100). Saved states
@@ -194,9 +202,21 @@ def create_payload_animation(positions, orientations, velocities, payload_positi
         rgba[:, 3] = PARTICLE_ALPHA
         return rgba
 
-    scatter = ax.scatter(positions[frames[0], :, 0], positions[frames[0], :, 1],
-                         s=marker_area, c=colors_for(0), linewidths=0, zorder=9)
+    #Set up curvity colors for particles edges
+    def curvity_color(k):        
+        if particle_curvities is None:
+            return np.tile(NO_SCORE_COLOR, (n_particles, 1))
+        else:
+            rgba = np.zeros((n_particles,4))
+            c = np.asarray(particle_curvities[frames[k]], dtype=float)
+            rgba = np.where(np.asarray(c)[:, None] < 0, NEGATIVE_CURVITY_COLOR, POSITIVE_CURVITY_COLOR)
+            return rgba
 
+    edge_color = curvity_color(0)
+    face_color = colors_for(0)
+    scatter = ax.scatter(positions[frames[0], :, 0], positions[frames[0], :, 1],
+                         s=marker_area, c=face_color, edgecolors=edge_color, linewidths=1, zorder=9)
+    
     # Payload: Perlin-noise textured disc, clipped to a circle, moved every frame
     tex = _payload_texture()
     cx, cy = payload_positions[0]
@@ -287,6 +307,7 @@ def create_payload_animation(positions, orientations, velocities, payload_positi
         colors = colors_for(k)
         scatter.set_offsets(positions[s_idx])
         scatter.set_facecolor(colors)
+        scatter.set_edgecolor(curvity_color(k))
         path_line.set_data(payload_positions[:s_idx + 1, 0], payload_positions[:s_idx + 1, 1])
         im.set_extent((px - payload_radius, px + payload_radius,
                        py - payload_radius, py + payload_radius))
@@ -346,10 +367,13 @@ def render_from_npz(npz_path, output_file, red_until_first_update=False, **kwarg
             raise SystemExit("NPZ has no 'first_update_steps'; re-run the simulation with the updated runner.")
         first_update = data['first_update_steps']
     polarity = data['polarity'] if 'polarity' in data.files else None
+    particle_curvities = data['curvity_values'] if 'curvity_values' in data.files else None
     create_payload_animation(
         data['positions'], None, None, data['payload_positions'], params, None,
         output_file=output_file, polarity=polarity,
-        particle_scores=data['particle_scores'], first_update_steps=first_update, **kwargs)
+        particle_scores=data['particle_scores'], particle_curvities=particle_curvities,
+        first_update_steps=first_update, **kwargs)
+
 
 
 if __name__ == "__main__":
